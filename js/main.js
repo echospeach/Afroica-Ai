@@ -682,11 +682,10 @@ async function boot(){
   }
 
   if(isLoggedIn()){
-    // Right after a Stripe redirect the backend can be momentarily slow
-    // (webhook processing, occasional cold start) — be more patient there
-    // than on an ordinary page load, so a subscribing user doesn't get
-    // dumped on the sign-in screen over a few seconds of lag.
-    const maxAttempts = checkoutStatus === 'success' ? 6 : 4;
+    // Mobile connections (LTE handoffs, brief signal drops) and backend
+    // cold starts both need real patience here — a subscribing user
+    // right after a Stripe redirect needs even more.
+    const maxAttempts = checkoutStatus === 'success' ? 8 : 6;
     const authenticated = await tryRestoreSession(maxAttempts);
     if(authenticated){
       if(checkoutStatus === 'success') await confirmCheckoutSuccess();
