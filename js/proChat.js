@@ -21,8 +21,10 @@ export function buildAnthropicUserContent(text, imageDataUrl){
 }
 
 // Streams the reply as plain text chunks. Calls onChunk(fullTextSoFar) as
-// each piece arrives; resolves with the complete reply text.
-export async function streamProChat(messages, onChunk){
+// each piece arrives; resolves with the complete reply text. `signal`
+// (an AbortSignal) is optional — pass one to support a "stop generating"
+// button; aborting rejects with a DOMException named "AbortError".
+export async function streamProChat(messages, onChunk, signal){
   const res = await fetch(`${API_BASE_URL}/chat/stream`, {
     method: 'POST',
     headers: {
@@ -30,6 +32,7 @@ export async function streamProChat(messages, onChunk){
       Authorization: `Bearer ${getToken()}`,
     },
     body: JSON.stringify({ messages }),
+    signal,
   });
 
   if(!res.ok){

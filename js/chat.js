@@ -17,11 +17,68 @@ function renderMarkdown(text){
   return DOMPurify.sanitize(marked.parse(text));
 }
 
-export function createChatView(chatInner, chatScroll){
+const COPY_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none"><rect x="9" y="9" width="12" height="12" rx="2" stroke="currentColor" stroke-width="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke="currentColor" stroke-width="2"/></svg>`;
+const CHECK_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const REGEN_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M1 4v6h6M23 20v-6h-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.51 15a9 9 0 0014.85 3.36L23 14M1 10l4.64 4.36A9 9 0 0020.49 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+// `onRegenerate` is called with no arguments when the regenerate button on
+// the latest AI message is clicked — main.js owns what "regenerate" means
+// (which tier to re-ask, popping the right state), this module only ever
+// renders the button and reports the click.
+export function createChatView(chatInner, chatScroll, { onRegenerate } = {}){
   let streamingBubble = null;
+  let streamingRow = null;
 
   function scrollToBottom(){
     chatScroll.scrollTop = chatScroll.scrollHeight;
+  }
+
+  // Only the most recent AI message offers "regenerate" — regenerating an
+  // older one would be ambiguous about what happens to everything after
+  // it, so keep this to the one case that's unambiguous. Copy stays on
+  // every AI message indefinitely.
+  function markLatestAi(){
+    const aiRows = chatInner.querySelectorAll('.msg-row.ai');
+    aiRows.forEach((row, i) => {
+      const regenBtn = row.querySelector('.msg-action-regenerate');
+      if(regenBtn) regenBtn.classList.toggle('hidden', i !== aiRows.length - 1);
+    });
+  }
+
+  function addActions(bubble, getText){
+    const actions = document.createElement('div');
+    actions.className = 'msg-actions';
+
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'msg-action-btn';
+    copyBtn.setAttribute('aria-label', 'Copy reply');
+    copyBtn.title = 'Copy';
+    copyBtn.innerHTML = COPY_ICON;
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(getText()).then(() => {
+        copyBtn.innerHTML = CHECK_ICON;
+        copyBtn.classList.add('copied');
+        setTimeout(() => {
+          copyBtn.innerHTML = COPY_ICON;
+          copyBtn.classList.remove('copied');
+        }, 1500);
+      }).catch((err) => console.error('Could not copy reply to clipboard:', err));
+    });
+    actions.appendChild(copyBtn);
+
+    const regenBtn = document.createElement('button');
+    regenBtn.type = 'button';
+    regenBtn.className = 'msg-action-btn msg-action-regenerate hidden';
+    regenBtn.setAttribute('aria-label', 'Regenerate this reply');
+    regenBtn.title = 'Regenerate';
+    regenBtn.innerHTML = REGEN_ICON;
+    regenBtn.addEventListener('click', () => {
+      if(onRegenerate) onRegenerate();
+    });
+    actions.appendChild(regenBtn);
+
+    bubble.appendChild(actions);
   }
 
   function addMessage(text, sender, imageDataUrl){
@@ -56,10 +113,13 @@ export function createChatView(chatInner, chatScroll){
       bubble.appendChild(textEl);
     }
 
+    if(sender === 'ai') addActions(bubble, () => text);
+
     row.appendChild(avatar);
     row.appendChild(bubble);
     chatInner.appendChild(row);
     scrollToBottom();
+    if(sender === 'ai') markLatestAi();
     return bubble;
   }
 
@@ -89,8 +149,8 @@ export function createChatView(chatInner, chatScroll){
 
   function renderStreamingReply(text){
     if(!streamingBubble){
-      const row = document.createElement('div');
-      row.className = 'msg-row ai';
+      streamingRow = document.createElement('div');
+      streamingRow.className = 'msg-row ai';
 
       const avatar = document.createElement('div');
       avatar.className = 'avatar ai';
@@ -98,9 +158,9 @@ export function createChatView(chatInner, chatScroll){
       streamingBubble = document.createElement('div');
       streamingBubble.className = 'bubble';
 
-      row.appendChild(avatar);
-      row.appendChild(streamingBubble);
-      chatInner.appendChild(row);
+      streamingRow.appendChild(avatar);
+      streamingRow.appendChild(streamingBubble);
+      chatInner.appendChild(streamingRow);
     }
     // Re-parsing the full text on every chunk (rather than diffing) is
     // simple and fast enough for chat-length replies — mid-stream, an
@@ -111,13 +171,32 @@ export function createChatView(chatInner, chatScroll){
     scrollToBottom();
   }
 
+  // Attaches copy/regenerate actions to whatever streamingBubble holds
+  // (even a partial reply, if generation was interrupted — see
+  // js/main.js's stop-generating handling) before clearing the reference,
+  // so the next message starts a fresh bubble.
   function resetStreaming(){
+    if(streamingBubble){
+      addActions(streamingBubble, () => streamingBubble.querySelector('.msg-text')?.textContent || '');
+      markLatestAi();
+    }
     streamingBubble = null;
+    streamingRow = null;
+  }
+
+  // Used by "regenerate" (see js/main.js) to remove the reply being
+  // replaced before a new one streams in. Works whether that reply had
+  // already finished (a plain .msg-row.ai) or was cut short.
+  function removeLastAiMessage(){
+    const aiRows = chatInner.querySelectorAll('.msg-row.ai');
+    const last = aiRows[aiRows.length - 1];
+    if(last) last.remove();
   }
 
   function clear(){
     chatInner.innerHTML = '';
     streamingBubble = null;
+    streamingRow = null;
   }
 
   return {
@@ -126,6 +205,7 @@ export function createChatView(chatInner, chatScroll){
     removeTyping,
     renderStreamingReply,
     resetStreaming,
+    removeLastAiMessage,
     clear,
     scrollToBottom
   };

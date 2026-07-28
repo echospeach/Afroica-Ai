@@ -39,10 +39,7 @@
 
       <div class="section-label">Recent</div>
       <div class="history" id="historyList">
-        <div class="history-item active">Welcome conversation</div>
-        <div class="history-item">Yoruba proverbs explained</div>
-        <div class="history-item">Business plan — Lagos market</div>
-        <div class="history-item">Swahili phrases for travel</div>
+        <div class="history-empty">No saved conversations yet — start typing below.</div>
       </div>
 
       <div class="sidebar-footer">
@@ -124,8 +121,11 @@
               </svg>
             </button>
             <button class="send-btn" id="sendBtn" disabled aria-label="Send message">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <svg class="send-icon" width="16" height="16" viewBox="0 0 24 24" fill="none">
                 <path d="M12 19V5M12 5L5 12M12 5L19 12" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <svg class="stop-icon hidden" width="13" height="13" viewBox="0 0 24 24" fill="none">
+                <rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/>
               </svg>
             </button>
           </div>

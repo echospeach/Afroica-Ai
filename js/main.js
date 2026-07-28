@@ -32,12 +32,19 @@ import { startCheckout, openBillingPortal } from './billing.js';
 import { buildAnthropicUserContent, streamProChat } from './proChat.js';
 import { streamFreeChat } from './freeChat.js';
 import { applyTheme, getStoredTheme } from './theme.js';
+import {
+  loadAllConversations, getConversation, generateConversationId,
+  deriveTitle, upsertConversation, deleteConversation
+} from './history.js';
 
 const chatInner = document.getElementById('chatInner');
 const chatScroll = document.getElementById('chatScroll');
 const promptInput = document.getElementById('promptInput');
 const sendBtn = document.getElementById('sendBtn');
+const sendIcon = sendBtn.querySelector('.send-icon');
+const stopIcon = sendBtn.querySelector('.stop-icon');
 const newChatBtn = document.getElementById('newChatBtn');
+const historyList = document.getElementById('historyList');
 const sidebar = document.querySelector('.sidebar');
 const sidebarToggleBtn = document.getElementById('sidebarToggleBtn');
 const sidebarBackdrop = document.getElementById('sidebarBackdrop');
@@ -80,18 +87,35 @@ const settingsModal = document.getElementById('settingsModal');
 const settingsCloseBtn = document.getElementById('settingsCloseBtn');
 const themeGrid = document.getElementById('themeGrid');
 
-const chat = createChatView(chatInner, chatScroll);
+const chat = createChatView(chatInner, chatScroll, { onRegenerate: () => regenerateLastReply() });
 
 let engine = null;
 let modelReady = false; // true once the on-device WebLLM fallback has finished loading
 let usingFallback = false; // true once Groq's fast path has failed once this session — sticky for the rest of it, rather than re-trying a possibly-still-exhausted shared quota on every message
 let generating = false;
+// "Stop generating" support. activeAbortController covers the two
+// fetch-based paths (Groq, Pro/Claude) — created fresh per request, torn
+// down when it ends however it ends. The on-device WebLLM path has its
+// own cancellation mechanism (engine.interruptGenerate()) rather than a
+// signal, since it isn't a fetch. stopRequested distinguishes "the user
+// deliberately stopped this" from a real failure, so the catch blocks
+// below can show "stopped" instead of a scary error message.
+let activeAbortController = null;
+let stopRequested = false;
 let pendingImage = null; // { dataUrl, name }
 // messages[0] is always the system prompt — kept as a real entry from the
 // start (filled in once persona.json loads) so `messages.length = 1` in
 // newChatBtn's handler can never leave a hole there. Pro-tier sends skip
 // this entry (the backend builds its own system prompt from persona.json).
 const messages = [{ role: 'system', content: '' }];
+
+// Chat history (js/history.js, localStorage-only — see its header comment
+// on the privacy reasoning). historyMessages is a plain-text parallel to
+// `messages` — never includes the system prompt or image data, just what
+// gets saved/restored. currentConversationId is null until the first
+// message of a new conversation is recorded.
+let currentConversationId = null;
+let historyMessages = []; // [{role:'user'|'ai', text}]
 
 // Free tier no longer needs anything pre-loaded — Groq's fast path (the
 // default) is ready the instant you're authenticated. Only blocked while
@@ -104,6 +128,16 @@ function isInteractive(){
 }
 
 function updateSendState(){
+  sendIcon.classList.toggle('hidden', generating);
+  stopIcon.classList.toggle('hidden', !generating);
+  if(generating){
+    // Always clickable while generating — it's now the stop button, not
+    // gated by the same "is there something to send" logic below.
+    sendBtn.disabled = false;
+    sendBtn.setAttribute('aria-label', 'Stop generating');
+    return;
+  }
+  sendBtn.setAttribute('aria-label', 'Send message');
   sendBtn.disabled = (promptInput.value.trim().length === 0 && !pendingImage) || !isInteractive();
 }
 
@@ -406,23 +440,129 @@ async function onAuthenticated(){
   }
 }
 
-// ---- Sending messages ----
-function beginSend(displayText, imageForMessage){
-  const hero = document.getElementById('heroState');
-  if(hero) hero.remove();
+// ---- Chat history (sidebar) ----
+function renderHistoryList(){
+  const conversations = loadAllConversations();
+  historyList.innerHTML = '';
 
-  chat.addMessage(displayText, 'user', imageForMessage ? imageForMessage.dataUrl : null);
+  if(conversations.length === 0){
+    const empty = document.createElement('div');
+    empty.className = 'history-empty';
+    empty.textContent = 'No saved conversations yet — start typing below.';
+    historyList.appendChild(empty);
+    return;
+  }
+
+  conversations.forEach((conv) => {
+    const item = document.createElement('div');
+    item.className = 'history-item' + (conv.id === currentConversationId ? ' active' : '');
+
+    const title = document.createElement('span');
+    title.className = 'history-item-title';
+    title.textContent = conv.title;
+    item.appendChild(title);
+
+    const del = document.createElement('button');
+    del.className = 'history-item-delete';
+    del.type = 'button';
+    del.setAttribute('aria-label', 'Delete conversation');
+    del.textContent = '✕';
+    del.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if(!window.confirm("Delete this conversation? This can't be undone.")) return;
+      deleteConversation(conv.id);
+      if(conv.id === currentConversationId) startNewConversation();
+      renderHistoryList();
+    });
+    item.appendChild(del);
+
+    item.addEventListener('click', () => loadConversationIntoView(conv.id));
+    historyList.appendChild(item);
+  });
+}
+
+function startNewConversation(){
+  currentConversationId = null;
+  historyMessages = [];
+  messages.length = 1; // keep system prompt, drop the rest
+}
+
+function loadConversationIntoView(id){
+  if(generating) return; // don't yank the view out from under an in-flight reply
+  const conv = getConversation(id);
+  if(!conv) return;
+
+  if(voice.isListening()) voice.stop();
+  chat.clear();
+  currentConversationId = conv.id;
+  historyMessages = conv.messages.map((m) => ({ ...m }));
+
+  // Rebuild the API-format messages array (system prompt + plain turns).
+  // Pro image content isn't restorable — it was never persisted in the
+  // first place, see js/history.js.
+  messages.length = 1;
+  historyMessages.forEach((m) => {
+    messages.push({ role: m.role === 'ai' ? 'assistant' : 'user', content: m.text });
+    chat.addMessage(m.text, m.role, null);
+  });
 
   pendingImage = null;
   showAttachPreview();
+  updateSendState();
+  renderHistoryList();
+  closeSidebar();
+}
 
-  promptInput.value = '';
-  promptInput.style.height = 'auto';
+function recordUserMessage(text){
+  historyMessages.push({ role: 'user', text });
+  saveCurrentConversation();
+}
+
+function recordAssistantMessage(text){
+  historyMessages.push({ role: 'ai', text });
+  saveCurrentConversation();
+}
+
+function saveCurrentConversation(){
+  if(historyMessages.length === 0) return;
+  if(!currentConversationId) currentConversationId = generateConversationId();
+  const firstUser = historyMessages.find((m) => m.role === 'user');
+  upsertConversation(currentConversationId, deriveTitle(firstUser ? firstUser.text : ''), historyMessages);
+  renderHistoryList();
+}
+
+// ---- Sending messages ----
+// skipUserMessage: true when regenerating (see regenerateLastReply) — the
+// user message is already on screen and already recorded, so re-adding it
+// would show/save a duplicate.
+function beginSend(displayText, imageForMessage, opts = {}){
+  const { skipUserMessage = false } = opts;
+  if(!skipUserMessage){
+    const hero = document.getElementById('heroState');
+    if(hero) hero.remove();
+
+    chat.addMessage(displayText, 'user', imageForMessage ? imageForMessage.dataUrl : null);
+    recordUserMessage(displayText);
+
+    pendingImage = null;
+    showAttachPreview();
+
+    promptInput.value = '';
+    promptInput.style.height = 'auto';
+  }
   generating = true;
+  stopRequested = false;
   updateSendState();
   setStatus('loading', 'Thinking…');
 
   chat.addTyping();
+}
+
+function stopGenerating(){
+  if(!generating) return;
+  stopRequested = true;
+  if(activeAbortController) activeAbortController.abort();
+  if(engine && typeof engine.interruptGenerate === 'function') engine.interruptGenerate();
 }
 
 function endSend(readyStatusText){
@@ -491,22 +631,35 @@ async function sendViaWebLLM(){
     }
 
     messages.push({ role: 'assistant', content: fullReply });
+    recordAssistantMessage(fullReply);
   }catch(err){
-    console.error(err);
-    chat.removeTyping();
-    if(isGpuDeviceLostError(err)){
-      // The engine object still exists but is no longer usable — clear it
-      // out so the next attempt reloads a fresh one instead of repeatedly
-      // hitting the same dead device.
-      engine = null;
-      modelReady = false;
-      modelInitPromise = null;
-      chat.addMessage(
-        'Your GPU ran out of memory and the on-device model was unloaded. Close other GPU-heavy tabs/apps, then refresh this page to reload it.',
-        'ai'
-      );
+    // engine.interruptGenerate() (see stopGenerating) may end the stream
+    // cleanly (falling into the success branch above with whatever text
+    // had streamed in) or may throw, depending on exactly when it lands —
+    // handle both: a deliberate stop should never show a scary error.
+    if(stopRequested){
+      chat.removeTyping();
+      if(fullReply){
+        messages.push({ role: 'assistant', content: fullReply });
+        recordAssistantMessage(fullReply);
+      }
     }else{
-      chat.addMessage('Something went wrong generating a reply on-device. Check the console for details.', 'ai');
+      console.error(err);
+      chat.removeTyping();
+      if(isGpuDeviceLostError(err)){
+        // The engine object still exists but is no longer usable — clear
+        // it out so the next attempt reloads a fresh one instead of
+        // repeatedly hitting the same dead device.
+        engine = null;
+        modelReady = false;
+        modelInitPromise = null;
+        chat.addMessage(
+          'Your GPU ran out of memory and the on-device model was unloaded. Close other GPU-heavy tabs/apps, then refresh this page to reload it.',
+          'ai'
+        );
+      }else{
+        chat.addMessage('Something went wrong generating a reply on-device. Check the console for details.', 'ai');
+      }
     }
   }finally{
     endSend(modelReady ? 'Ready · running on your device' : 'Model unloaded — refresh the page to reload it');
@@ -518,29 +671,46 @@ async function sendViaWebLLM(){
 // on-device model only if Groq signals its shared free quota is
 // unavailable (503) — see sendViaWebLLM above. Image attachments never
 // reach here — free tier's attach button is Pro-gated (see enableChatUI).
-async function sendFreeMessage(displayText){
-  beginSend(displayText, null);
-  messages.push({ role: 'user', content: displayText });
+async function sendFreeMessage(displayText, opts = {}){
+  beginSend(displayText, null, opts);
+  if(!opts.skipUserMessage){
+    messages.push({ role: 'user', content: displayText });
+  }
 
   if(!usingFallback){
     const payload = messages.slice(1).map((m) => ({ role: m.role, content: m.content }));
     let started = false;
+    let lastPartial = '';
+    activeAbortController = new AbortController();
     try{
       const fullReply = await streamFreeChat(payload, (partial) => {
+        lastPartial = partial;
         if(!started){
           chat.removeTyping();
           started = true;
         }
         chat.renderStreamingReply(partial);
-      });
+      }, activeAbortController.signal);
       if(!started){
         chat.removeTyping();
         chat.addMessage(fullReply || "I didn't manage to generate a reply — try rephrasing that.", 'ai');
       }
       messages.push({ role: 'assistant', content: fullReply });
+      recordAssistantMessage(fullReply);
       endSend('Ready · fast mode');
       return;
     }catch(err){
+      if(stopRequested || err.name === 'AbortError'){
+        // User-initiated stop — finalize whatever text streamed in before
+        // the abort as a normal (if incomplete) reply, not an error.
+        chat.removeTyping();
+        if(lastPartial){
+          messages.push({ role: 'assistant', content: lastPartial });
+          recordAssistantMessage(lastPartial);
+        }
+        endSend('Ready · fast mode');
+        return;
+      }
       if(err.status === 429){
         chat.removeTyping();
         chat.addMessage("You've hit today's free daily limit — upgrade to Pro for unlimited messages, or try again tomorrow.", 'ai');
@@ -576,48 +746,67 @@ async function sendFreeMessage(displayText){
         }
         console.error('Usage check failed, continuing with on-device fallback anyway:', usageErr);
       }
+    }finally{
+      activeAbortController = null;
     }
   }
 
   await sendViaWebLLM();
 }
 
-async function sendProMessage(displayText, imageForMessage){
-  beginSend(displayText, imageForMessage);
+async function sendProMessage(displayText, imageForMessage, opts = {}){
+  beginSend(displayText, imageForMessage, opts);
 
-  const content = buildAnthropicUserContent(displayText, imageForMessage ? imageForMessage.dataUrl : null);
-  messages.push({ role: 'user', content });
+  if(!opts.skipUserMessage){
+    const content = buildAnthropicUserContent(displayText, imageForMessage ? imageForMessage.dataUrl : null);
+    messages.push({ role: 'user', content });
+  }
 
   let started = false;
+  let lastPartial = '';
+  activeAbortController = new AbortController();
 
   try{
     // messages[0] is the local placeholder system entry — the backend
     // builds its own system prompt from persona.json, so it's never sent.
     const payload = messages.slice(1).map((m) => ({ role: m.role, content: m.content }));
     const fullReply = await streamProChat(payload, (partial) => {
+      lastPartial = partial;
       if(!started){
         chat.removeTyping();
         started = true;
       }
       chat.renderStreamingReply(partial);
-    });
+    }, activeAbortController.signal);
 
     if(!started){
       chat.removeTyping();
       chat.addMessage(fullReply || "I didn't manage to generate a reply — try rephrasing that.", 'ai');
     }
     messages.push({ role: 'assistant', content: fullReply });
+    recordAssistantMessage(fullReply);
   }catch(err){
-    console.error(err);
-    chat.removeTyping();
-    if(err.status === 402){
-      chat.addMessage('Your Pro subscription looks inactive — refresh the page or check your billing.', 'ai');
-    }else if(err.status === 429){
-      chat.addMessage("You've hit today's fair-use limit — try again tomorrow.", 'ai');
+    if(stopRequested || err.name === 'AbortError'){
+      // User-initiated stop — finalize whatever text streamed in before
+      // the abort as a normal (if incomplete) reply, not an error.
+      chat.removeTyping();
+      if(lastPartial){
+        messages.push({ role: 'assistant', content: lastPartial });
+        recordAssistantMessage(lastPartial);
+      }
     }else{
-      chat.addMessage('Something went wrong reaching the server. Check the console for details.', 'ai');
+      console.error(err);
+      chat.removeTyping();
+      if(err.status === 402){
+        chat.addMessage('Your Pro subscription looks inactive — refresh the page or check your billing.', 'ai');
+      }else if(err.status === 429){
+        chat.addMessage("You've hit today's fair-use limit — try again tomorrow.", 'ai');
+      }else{
+        chat.addMessage('Something went wrong reaching the server. Check the console for details.', 'ai');
+      }
     }
   }finally{
+    activeAbortController = null;
     endSend('Ready · Pro · fast server-side responses');
   }
 }
@@ -634,6 +823,33 @@ async function sendMessage(){
   else await sendFreeMessage(displayText);
 }
 
+// Re-asks the last user message, replacing the last AI reply in place
+// (DOM, API-format `messages`, and saved history all get the trailing
+// assistant entry popped first). Only ever offered on the most recent
+// reply — see chat.js's markLatestAi() — so there's no ambiguity about
+// what "regenerate" means. Note: if that last exchange included an image
+// (Pro only), the image itself isn't restorable — it was never persisted
+// in history — so a regenerated reply to an image question re-asks as
+// text-only, which can change the answer. An accepted, documented
+// limitation rather than a bug.
+async function regenerateLastReply(){
+  if(generating) return;
+  const lastUser = [...historyMessages].reverse().find((m) => m.role === 'user');
+  if(!lastUser) return;
+
+  chat.removeLastAiMessage();
+  if(historyMessages.length && historyMessages[historyMessages.length - 1].role === 'ai'){
+    historyMessages.pop();
+  }
+  if(messages.length && messages[messages.length - 1].role === 'assistant'){
+    messages.pop();
+  }
+  saveCurrentConversation();
+
+  if(isPro()) await sendProMessage(lastUser.text, null, { skipUserMessage: true });
+  else await sendFreeMessage(lastUser.text, { skipUserMessage: true });
+}
+
 // ---- Wiring ----
 promptInput.addEventListener('input', () => {
   autosize();
@@ -646,7 +862,10 @@ promptInput.addEventListener('keydown', (e) => {
   }
 });
 
-sendBtn.addEventListener('click', sendMessage);
+sendBtn.addEventListener('click', () => {
+  if(generating) stopGenerating();
+  else sendMessage();
+});
 
 // ---- Mobile sidebar drawer (hidden off-canvas below 720px — see style.css) ----
 function openSidebar(){
@@ -667,12 +886,18 @@ newChatBtn.addEventListener('click', () => {
   if(voice.isListening()) voice.stop();
   chat.clear();
   chatInner.appendChild(makeHero());
-  messages.length = 1; // keep system prompt, drop the rest
+  startNewConversation();
   pendingImage = null;
   showAttachPreview();
   updateSendState();
+  renderHistoryList();
   closeSidebar();
 });
+
+// Populate the sidebar with whatever's already saved — history is
+// per-browser (localStorage), not tied to being logged in, so this runs
+// unconditionally rather than waiting on auth.
+renderHistoryList();
 
 // ---- Boot ----
 // Admin "impersonate" handoff: the admin dashboard opens this app with
