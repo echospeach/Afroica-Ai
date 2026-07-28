@@ -583,6 +583,7 @@ textarea::placeholder{ color:var(--text-muted); }
 }
 
 .gold{ color:var(--gold); }
+.hidden{ display:none; }
 
 .link-btn{
   background:none;
@@ -647,6 +648,16 @@ textarea::placeholder{ color:var(--text-muted); }
   text-align:center;
   gap:12px;
 }
+/* #authFormWrap and #connectionError wrap .auth-card's actual content so
+   only one can show at a time — restore the same flex/gap/center layout
+   .auth-card's direct children would otherwise get. */
+#authFormWrap, #connectionError{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:12px;
+  width:100%;
+}
 .auth-card h2{
   font-family:'Archivo Black', sans-serif;
   font-size:20px;
@@ -677,7 +688,8 @@ textarea::placeholder{ color:var(--text-muted); }
   outline:none;
 }
 #authForm input:focus{ border-color:var(--gold); }
-#authSubmitBtn{
+#authSubmitBtn, #connectionRetryBtn{
+  width:100%;
   margin-top:2px;
   background:linear-gradient(135deg, var(--gold), var(--clay));
   color:var(--bg);

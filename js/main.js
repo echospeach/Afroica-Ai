@@ -50,6 +50,9 @@ const attachName = document.getElementById('attachName');
 const attachRemoveBtn = document.getElementById('attachRemoveBtn');
 
 const authGate = document.getElementById('authGate');
+const authFormWrap = document.getElementById('authFormWrap');
+const connectionError = document.getElementById('connectionError');
+const connectionRetryBtn = document.getElementById('connectionRetryBtn');
 const authForm = document.getElementById('authForm');
 const authEmail = document.getElementById('authEmail');
 const authPassword = document.getElementById('authPassword');
@@ -245,8 +248,22 @@ document.querySelectorAll('.upgrade-choice-btn').forEach((btn) => {
 });
 
 // ---- Auth gate ----
-function showAuthGate(){ authGate.classList.remove('hidden'); }
+function showAuthGate(){
+  authGate.classList.remove('hidden');
+  authFormWrap.classList.remove('hidden');
+  connectionError.classList.add('hidden');
+}
 function hideAuthGate(){ authGate.classList.add('hidden'); }
+
+// Shown instead of the sign-in form when a stored session couldn't be
+// verified because the backend was unreachable (not because the token
+// was actually invalid) — a blank login form in that situation reads as
+// "you got logged out," which isn't true, so say so explicitly instead.
+function showConnectionError(){
+  authGate.classList.remove('hidden');
+  authFormWrap.classList.add('hidden');
+  connectionError.classList.remove('hidden');
+}
 
 let authMode = 'signup';
 
@@ -623,6 +640,46 @@ async function confirmCheckoutSuccess(){
   }
 }
 
+// Tries to load the signed-in account, retrying on anything that isn't a
+// definitive "this token is bad" response. Returns true on success. On a
+// real 401 it signs out (correct — no amount of retrying fixes a bad
+// token) and returns false. On anything else (network error, backend
+// unreachable, CORS hiccup) it leaves the token alone and just returns
+// false — the caller decides what to show for that case.
+async function tryRestoreSession(maxAttempts){
+  for(let attempt = 1; attempt <= maxAttempts; attempt++){
+    try{
+      await onAuthenticated();
+      return true;
+    }catch(err){
+      if(err.status === 401){
+        console.warn('Stored session was invalid, signing out:', err);
+        logout();
+        return false;
+      }
+      console.warn(`Failed to load account (attempt ${attempt}/${maxAttempts}):`, err);
+      if(attempt < maxAttempts) await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+  }
+  return false;
+}
+
+connectionRetryBtn.addEventListener('click', async () => {
+  connectionRetryBtn.disabled = true;
+  connectionRetryBtn.textContent = 'Retrying…';
+  const authenticated = await tryRestoreSession(2);
+  if(authenticated){
+    hideAuthGate();
+  }else if(isLoggedIn()){
+    connectionRetryBtn.disabled = false;
+    connectionRetryBtn.textContent = 'Retry';
+  }else{
+    // tryRestoreSession found a real 401 and signed out — show the
+    // actual sign-in form instead of the connection-error state.
+    showAuthGate();
+  }
+});
+
 async function boot(){
   await loadSystemPrompt();
 
@@ -646,33 +703,19 @@ async function boot(){
     // (webhook processing, occasional cold start) — be more patient there
     // than on an ordinary page load, so a subscribing user doesn't get
     // dumped on the sign-in screen over a few seconds of lag.
-    const maxAttempts = checkoutStatus === 'success' ? 5 : 2;
-    let authenticated = false;
-    for(let attempt = 1; attempt <= maxAttempts && !authenticated; attempt++){
-      try{
-        await onAuthenticated();
-        authenticated = true;
-      }catch(err){
-        if(err.status === 401){
-          // The token itself is invalid/expired — this is a real logout,
-          // no amount of retrying fixes a bad token.
-          console.warn('Stored session was invalid, signing out:', err);
-          logout();
-          break;
-        }
-        console.warn(`Failed to load account (attempt ${attempt}/${maxAttempts}):`, err);
-        if(attempt < maxAttempts) await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
-    }
+    const maxAttempts = checkoutStatus === 'success' ? 6 : 4;
+    const authenticated = await tryRestoreSession(maxAttempts);
     if(authenticated){
       if(checkoutStatus === 'success') await confirmCheckoutSuccess();
       return;
     }
     if(isLoggedIn()){
-      // Not a bad token (that path already returned above via logout()) —
-      // just couldn't reach the backend. Session stays intact for next
-      // reload; don't silently pretend everything's fine either.
-      console.error('Could not load your account after retrying — showing sign-in screen, but your session is still saved.');
+      // Not a bad token (that path already returned inside
+      // tryRestoreSession via logout()) — just couldn't reach the
+      // backend. Say so explicitly instead of showing a blank sign-in
+      // form, which reads as "you got logged out" even though you didn't.
+      showConnectionError();
+      return;
     }
   }
 

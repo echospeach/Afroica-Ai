@@ -125,17 +125,26 @@
 <div class="auth-gate" id="authGate">
   <div class="auth-card">
     <div class="brand-mark" style="width:44px;height:44px;margin-bottom:6px;"></div>
-    <h2>Sign in to Afroica <span class="gold">AI</span></h2>
-    <p>Free — 15 messages a day, runs on your device. Upgrade any time for unlimited, faster, server-side responses.</p>
-    <form id="authForm">
-      <input type="email" id="authEmail" placeholder="Email" autocomplete="email" required>
-      <input type="password" id="authPassword" placeholder="Password (min 8 characters)" autocomplete="current-password" minlength="8" required>
-      <button type="submit" id="authSubmitBtn">Sign up</button>
-    </form>
-    <button type="button" class="link-btn" id="authToggleModeBtn">Already have an account? Log in</button>
-    <button type="button" class="link-btn" id="forgotPasswordBtn">Forgot password?</button>
-    <div class="auth-error" id="authError"></div>
-    <p class="auth-legal">By continuing you agree to our <a href="TERMS.md" target="_blank" rel="noopener">Terms</a> and <a href="PRIVACY.md" target="_blank" rel="noopener">Privacy Policy</a>.</p>
+
+    <div id="connectionError" class="hidden">
+      <h2>Connection problem</h2>
+      <p>You're still signed in — we just couldn't reach the server to load your account. Check your connection and try again.</p>
+      <button type="button" id="connectionRetryBtn">Retry</button>
+    </div>
+
+    <div id="authFormWrap">
+      <h2>Sign in to Afroica <span class="gold">AI</span></h2>
+      <p>Free — 15 messages a day, runs on your device. Upgrade any time for unlimited, faster, server-side responses.</p>
+      <form id="authForm">
+        <input type="email" id="authEmail" placeholder="Email" autocomplete="email" required>
+        <input type="password" id="authPassword" placeholder="Password (min 8 characters)" autocomplete="current-password" minlength="8" required>
+        <button type="submit" id="authSubmitBtn">Sign up</button>
+      </form>
+      <button type="button" class="link-btn" id="authToggleModeBtn">Already have an account? Log in</button>
+      <button type="button" class="link-btn" id="forgotPasswordBtn">Forgot password?</button>
+      <div class="auth-error" id="authError"></div>
+      <p class="auth-legal">By continuing you agree to our <a href="TERMS.md" target="_blank" rel="noopener">Terms</a> and <a href="PRIVACY.md" target="_blank" rel="noopener">Privacy Policy</a>.</p>
+    </div>
   </div>
 </div>
 
