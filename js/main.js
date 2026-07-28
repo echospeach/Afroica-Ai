@@ -32,6 +32,9 @@ const chatScroll = document.getElementById('chatScroll');
 const promptInput = document.getElementById('promptInput');
 const sendBtn = document.getElementById('sendBtn');
 const newChatBtn = document.getElementById('newChatBtn');
+const sidebar = document.querySelector('.sidebar');
+const sidebarToggleBtn = document.getElementById('sidebarToggleBtn');
+const sidebarBackdrop = document.getElementById('sidebarBackdrop');
 const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
 const loadBanner = document.getElementById('loadBanner');
@@ -542,6 +545,20 @@ if(tryPhotoSuggestion){
 
 sendBtn.addEventListener('click', sendMessage);
 
+// ---- Mobile sidebar drawer (hidden off-canvas below 720px — see style.css) ----
+function openSidebar(){
+  sidebar.classList.add('open');
+  sidebarBackdrop.classList.add('open');
+}
+function closeSidebar(){
+  sidebar.classList.remove('open');
+  sidebarBackdrop.classList.remove('open');
+}
+sidebarToggleBtn.addEventListener('click', () => {
+  sidebar.classList.contains('open') ? closeSidebar() : openSidebar();
+});
+sidebarBackdrop.addEventListener('click', closeSidebar);
+
 newChatBtn.addEventListener('click', () => {
   if(generating) return;
   if(voice.isListening()) voice.stop();
@@ -551,6 +568,7 @@ newChatBtn.addEventListener('click', () => {
   pendingImage = null;
   showAttachPreview();
   updateSendState();
+  closeSidebar();
 });
 
 // ---- Boot ----

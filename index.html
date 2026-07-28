@@ -47,8 +47,15 @@
       </div>
     </aside>
 
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
     <main class="main">
       <div class="topbar">
+        <button class="sidebar-toggle" id="sidebarToggleBtn" type="button" aria-label="Toggle menu">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
         <div class="topbar-title">Welcome conversation</div>
         <div class="status-pill">
           <span class="status-dot loading" id="statusDot"></span>
