@@ -6,10 +6,7 @@
 // PRODUCTION_API_URL / PRODUCTION_MAIN_APP_URL if either deployed URL
 // ever changes.
 const PRODUCTION_API_URL = 'https://afroica-ai-production.up.railway.app';
-// TODO: set this once the main app's Vercel URL exists — until then this
-// falls back to the local dev URL even when the admin dashboard itself is
-// deployed, so "Impersonate" would open the wrong place in production.
-const PRODUCTION_MAIN_APP_URL = 'http://localhost:8080';
+const PRODUCTION_MAIN_APP_URL = 'https://afroica-ai.vercel.app';
 const isLocalHost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
 
 export const API_BASE_URL = isLocalHost ? 'http://localhost:8000' : PRODUCTION_API_URL;
