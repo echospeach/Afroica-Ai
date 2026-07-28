@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Afroica AI</title>
+<link rel="icon" type="image/svg+xml" href="assets/logo.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app">
+  <div class="weave"></div>
+  <div class="layout">
+
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark"></div>
+        <div class="brand-name">Afroica <span>AI</span></div>
+      </div>
+
+      <button class="new-chat" id="newChatBtn">
+        <span style="font-size:16px; line-height:0;">+</span> New chat
+      </button>
+
+      <div class="section-label">Recent</div>
+      <div class="history" id="historyList">
+        <div class="history-item active">Welcome conversation</div>
+        <div class="history-item">Yoruba proverbs explained</div>
+        <div class="history-item">Business plan — Lagos market</div>
+        <div class="history-item">Swahili phrases for travel</div>
+      </div>
+
+      <div class="sidebar-footer">
+        <span id="usageLabel">Sign in to start</span>
+        <button class="free-tag" id="upgradeBtn" type="button" disabled>Upgrade</button>
+      </div>
+      <div class="account-row" id="accountRow">
+        <span id="accountEmail"></span>
+        <span class="account-row-actions">
+          <button class="link-btn" id="logoutBtn" type="button">Log out</button>
+          <button class="link-btn danger" id="deleteAccountBtn" type="button">Delete account</button>
+        </span>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div class="topbar-title">Welcome conversation</div>
+        <div class="status-pill">
+          <span class="status-dot loading" id="statusDot"></span>
+          <span id="statusText">Starting up…</span>
+        </div>
+      </div>
+
+      <div class="load-banner" id="loadBanner">
+        <div class="load-text">
+          <span id="loadLabel">Loading on-device model…</span>
+          <span id="loadPercent">0%</span>
+        </div>
+        <div class="load-track"><div class="load-fill" id="loadFill"></div></div>
+      </div>
+
+      <div class="chat-scroll" id="chatScroll">
+        <div class="chat-inner" id="chatInner">
+          <div class="hero" id="heroState">
+            <div class="hero-mark"></div>
+            <h1>Afroica <span>AI</span></h1>
+            <p>An assistant built for African languages, culture, and everyday questions — running at zero server cost. Type, speak, or attach a photo to get started.</p>
+            <div class="suggestions">
+              <div class="suggestion" data-q="Translate a greeting into Swahili"><b>Translate</b>Turn a greeting into Swahili</div>
+              <div class="suggestion" data-q="Explain a popular Yoruba proverb"><b>Culture</b>Explain a Yoruba proverb</div>
+              <div class="suggestion" data-q="Draft a business plan outline for a small shop in Lagos"><b>Business</b>Draft a plan for a small shop</div>
+              <div class="suggestion" id="tryPhotoSuggestion"><b>📷 Photo</b>Attach a picture and ask about it</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="input-zone">
+        <div style="width:100%; max-width:720px;">
+          <div class="attach-preview hidden" id="attachPreview">
+            <img id="attachPreviewImg" alt="Attached image preview">
+            <span class="attach-name" id="attachName"></span>
+            <button class="attach-remove" id="attachRemoveBtn" type="button" aria-label="Remove attached image">✕</button>
+          </div>
+          <div class="input-wrap">
+            <input type="file" id="imageInput" accept="image/*" hidden>
+            <button class="icon-btn" id="attachBtn" type="button" aria-label="Attach an image" title="Attach an image" disabled>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
+                <path d="M21.44 11.05l-9.19 9.19a5.5 5.5 0 01-7.78-7.78l9.19-9.19a3.5 3.5 0 014.95 4.95l-9.19 9.19a1.5 1.5 0 01-2.13-2.12l8.49-8.49" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <textarea id="promptInput" rows="1" placeholder="Loading model…" disabled></textarea>
+            <button class="icon-btn" id="micBtn" type="button" aria-label="Voice input" title="Speak your message" disabled>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
+                <path d="M12 15a3 3 0 003-3V6a3 3 0 00-6 0v6a3 3 0 003 3z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M19 11a7 7 0 01-14 0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <path d="M12 19v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+            </button>
+            <button class="send-btn" id="sendBtn" disabled aria-label="Send message">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M12 19V5M12 5L5 12M12 5L19 12" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
+          <div class="disclaimer">Free tier runs entirely on your device, at zero cost. Upgrade to Pro for faster, unlimited, server-side responses.</div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div class="auth-gate" id="authGate">
+  <div class="auth-card">
+    <div class="brand-mark" style="width:44px;height:44px;margin-bottom:6px;"></div>
+    <h2>Sign in to Afroica <span class="gold">AI</span></h2>
+    <p>Free — 15 messages a day, runs on your device. Upgrade any time for unlimited, faster, server-side responses.</p>
+    <form id="authForm">
+      <input type="email" id="authEmail" placeholder="Email" autocomplete="email" required>
+      <input type="password" id="authPassword" placeholder="Password (min 8 characters)" autocomplete="current-password" minlength="8" required>
+      <button type="submit" id="authSubmitBtn">Sign up</button>
+    </form>
+    <button type="button" class="link-btn" id="authToggleModeBtn">Already have an account? Log in</button>
+    <button type="button" class="link-btn" id="forgotPasswordBtn">Forgot password?</button>
+    <div class="auth-error" id="authError"></div>
+    <p class="auth-legal">By continuing you agree to our <a href="TERMS.md" target="_blank" rel="noopener">Terms</a> and <a href="PRIVACY.md" target="_blank" rel="noopener">Privacy Policy</a>.</p>
+  </div>
+</div>
+
+<div class="pricing-modal hidden" id="pricingModal">
+  <div class="pricing-card-wrap">
+    <button class="pricing-close" id="pricingCloseBtn" type="button" aria-label="Close">✕</button>
+    <h2>Upgrade to Afroica <span class="gold">AI</span> Pro</h2>
+    <div class="pricing-grid">
+      <div class="price-card">
+        <h3>Free</h3>
+        <div class="price">$0</div>
+        <ul>
+          <li>15 messages/day</li>
+          <li>Runs on your device</li>
+          <li>Voice + image understanding</li>
+        </ul>
+      </div>
+      <div class="price-card featured">
+        <h3>Pro Monthly</h3>
+        <div class="price">$6.99<span>/mo</span></div>
+        <ul>
+          <li>Unlimited daily messages</li>
+          <li>Fast server-side responses</li>
+          <li>Priority image understanding</li>
+        </ul>
+        <button class="upgrade-choice-btn" type="button" data-plan="monthly">Choose Monthly</button>
+      </div>
+      <div class="price-card">
+        <h3>Pro Yearly</h3>
+        <div class="price">$59.99<span>/yr</span></div>
+        <ul>
+          <li>Everything in Pro Monthly</li>
+          <li>~2 months free</li>
+        </ul>
+        <button class="upgrade-choice-btn" type="button" data-plan="yearly">Choose Yearly</button>
+      </div>
+    </div>
+    <div class="pricing-error" id="pricingError"></div>
+  </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+
+</body>
+</html>

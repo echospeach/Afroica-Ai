@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: afroica-ai-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        sync: false # set to your Neon Postgres connection string
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PRICE_MONTHLY
+        sync: false
+      - key: STRIPE_PRICE_YEARLY
+        sync: false
+      - key: FRONTEND_URL
+        sync: false # e.g. https://your-frontend.example.com
+      - key: CORS_ORIGINS
+        sync: false # same as FRONTEND_URL, comma-separated if more than one

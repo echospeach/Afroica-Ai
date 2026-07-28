@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Afroica AI — Admin</title>
+<link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="login-view" id="loginView">
+  <div class="login-card">
+    <img class="login-logo" src="../assets/logo.svg" alt="Afroica AI logo">
+    <h1>Afroica <span class="gold">AI</span> Admin</h1>
+    <p>Usage &amp; business metrics — not tied to regular user accounts.</p>
+    <form id="loginForm">
+      <input type="email" id="loginEmail" placeholder="Admin email" autocomplete="username" required>
+      <input type="password" id="loginPassword" placeholder="Password" autocomplete="current-password" required>
+      <button type="submit" id="loginBtn">Log in</button>
+    </form>
+    <div class="login-error" id="loginError"></div>
+  </div>
+</div>
+
+<div class="dashboard hidden" id="dashboard">
+  <header class="topbar">
+    <div class="topbar-brand">
+      <img src="../assets/logo.svg" alt="" class="topbar-logo">
+      <span>Afroica <b class="gold">AI</b> · Admin</span>
+    </div>
+    <button class="logout-btn" id="logoutBtn" type="button">Log out</button>
+  </header>
+
+  <main class="content">
+    <section class="stat-grid" id="statGrid" aria-label="Business metrics">
+      <div class="stat-card">
+        <span class="stat-label">Total users</span>
+        <span class="stat-value" id="statTotalUsers">—</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Free</span>
+        <span class="stat-value" id="statFreeUsers">—</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Pro monthly</span>
+        <span class="stat-value" id="statProMonthly">—</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Pro yearly</span>
+        <span class="stat-value" id="statProYearly">—</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Messages today</span>
+        <span class="stat-value" id="statMessagesToday">—</span>
+      </div>
+      <div class="stat-card accent">
+        <span class="stat-label">Estimated MRR</span>
+        <span class="stat-value" id="statMRR">—</span>
+        <span class="stat-note">from active subscriptions in our DB, not a live Stripe pull</span>
+      </div>
+    </section>
+
+    <section class="panel" aria-label="Signups, last 30 days">
+      <div class="panel-header">
+        <h2>Signups — last 30 days</h2>
+      </div>
+      <div class="chart" id="signupsChart" role="img" aria-label="Bar chart of daily signups over the last 30 days"></div>
+    </section>
+
+    <section class="panel" aria-label="Users">
+      <div class="panel-header">
+        <h2>Users</h2>
+        <input type="search" id="usersSearch" placeholder="Search by email…" aria-label="Search users by email">
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Email</th>
+              <th>Joined</th>
+              <th>Plan</th>
+              <th>Status</th>
+              <th>Messages today</th>
+            </tr>
+          </thead>
+          <tbody id="usersTableBody"></tbody>
+        </table>
+      </div>
+      <div class="table-footer" id="usersTotalLabel"></div>
+    </section>
+  </main>
+</div>
+
+<div class="modal hidden" id="userModal">
+  <div class="modal-card">
+    <button class="modal-close" id="userModalClose" type="button" aria-label="Close">✕</button>
+    <div id="userModalBody">
+      <p class="modal-loading">Loading…</p>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="js/adminMain.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400">
+<rect width="400" height="400" rx="90" fill="oklch(0.2 0.015 55)"/>
+<g transform="translate(60,60) scale(2.8)">
+<circle cx="50" cy="50" r="50" fill="oklch(0.6 0.15 45)"/>
+<polygon points="50,22 74,64 26,64" fill="oklch(0.99 0.004 60)"/><polygon points="50,40 66,68 34,68" fill="oklch(0.85 0.08 45)" opacity="0.55"/><circle cx="50" cy="30" r="4.5" fill="oklch(0.99 0.004 60)"/>
+</g>
+</svg>
