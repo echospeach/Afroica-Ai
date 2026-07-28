@@ -1,6 +1,10 @@
-// Base URL of the Python backend (see /backend). Change this when you
-// deploy the backend — see README for the Render/Neon setup steps.
-export const API_BASE_URL = 'http://localhost:8000';
+// Base URL of the Python backend (see /backend). Auto-detects local vs.
+// deployed so this never needs manual toggling (and can't be forgotten)
+// when switching between local dev and the live site — update
+// PRODUCTION_API_URL below if the backend's deployed URL ever changes.
+const PRODUCTION_API_URL = 'https://afroica-ai-production.up.railway.app';
+const isLocalHost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+export const API_BASE_URL = isLocalHost ? 'http://localhost:8000' : PRODUCTION_API_URL;
 
 const TOKEN_KEY = 'afroica_token';
 
