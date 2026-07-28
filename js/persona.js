@@ -34,6 +34,19 @@ export async function loadPersona(){
 export function buildSystemPrompt(persona){
   const parts = [`You are ${persona.ai_name}, a helpful assistant.`];
 
+  // The model's training data has its own cutoff and doesn't know that on
+  // its own — without this, it confidently states stale facts (an old
+  // president, an old software version) as if current. This doesn't give
+  // it real-time knowledge, just tells it to be honest about the gap.
+  const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  parts.push(
+    `Today's date is ${today}. Your training data has a knowledge cutoff and may not ` +
+    'include recent events, current officeholders, prices, or other time-sensitive ' +
+    'facts — if asked about something that could plausibly have changed since your ' +
+    'training, say so honestly and note your answer might be outdated, rather than ' +
+    'confidently stating old information as current fact.'
+  );
+
   if(persona.expertise && persona.expertise.length){
     parts.push(`You have strong knowledge of: ${persona.expertise.join(', ')}.`);
   }

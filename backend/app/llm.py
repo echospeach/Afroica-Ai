@@ -5,6 +5,7 @@ system prompt from the same fields, so behavior stays consistent whether a
 message is answered by the free on-device model or by this backend.
 """
 
+import datetime as dt
 import json
 from collections.abc import Iterator
 from pathlib import Path
@@ -40,6 +41,19 @@ def load_persona() -> dict:
 
 def build_system_prompt(persona: dict, image_capable: bool = False) -> str:
     parts = [f"You are {persona['ai_name']}, a helpful assistant."]
+    # The model's training data has its own cutoff and knows nothing about
+    # that on its own — without this, it confidently states stale facts
+    # (an old president, an old software version) as if current. This
+    # doesn't give it real-time knowledge, just tells it to be honest
+    # about the gap instead of asserting outdated info as fact.
+    today = dt.datetime.now(dt.timezone.utc).strftime("%B %d, %Y")
+    parts.append(
+        f"Today's date is {today}. Your training data has a knowledge cutoff and may not "
+        "include recent events, current officeholders, prices, or other time-sensitive "
+        "facts — if asked about something that could plausibly have changed since your "
+        "training, say so honestly and note your answer might be outdated, rather than "
+        "confidently stating old information as current fact."
+    )
     if persona.get("expertise"):
         parts.append(f"You have strong knowledge of: {', '.join(persona['expertise'])}.")
     if persona.get("user_name"):
