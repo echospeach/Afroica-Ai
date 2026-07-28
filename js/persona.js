@@ -27,6 +27,10 @@ export async function loadPersona(){
   }
 }
 
+// Only ever used for the on-device WebLLM fallback (Pro sends this to the
+// backend instead, which builds its own — see backend/app/llm.py — and
+// includes the image-capability line there since Claude actually is
+// vision-capable, unlike the text-only local model this feeds).
 export function buildSystemPrompt(persona){
   const parts = [`You are ${persona.ai_name}, a helpful assistant.`];
 
@@ -39,7 +43,11 @@ export function buildSystemPrompt(persona){
   if(persona.tone){
     parts.push(`Tone: ${persona.tone}.`);
   }
-  parts.push('You can also see and discuss images the user attaches.');
+  parts.push(
+    "Answer the user's actual question directly and specifically first — " +
+    "don't open with generic background, disclaimers, or unrelated context " +
+    "unless it's needed to answer. Stay on the topic they actually asked about."
+  );
   if(persona.instructions){
     parts.push(persona.instructions);
   }

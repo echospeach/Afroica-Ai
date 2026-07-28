@@ -38,7 +38,7 @@ def load_persona() -> dict:
         return dict(DEFAULT_PERSONA)
 
 
-def build_system_prompt(persona: dict) -> str:
+def build_system_prompt(persona: dict, image_capable: bool = False) -> str:
     parts = [f"You are {persona['ai_name']}, a helpful assistant."]
     if persona.get("expertise"):
         parts.append(f"You have strong knowledge of: {', '.join(persona['expertise'])}.")
@@ -48,7 +48,17 @@ def build_system_prompt(persona: dict) -> str:
         )
     if persona.get("tone"):
         parts.append(f"Tone: {persona['tone']}.")
-    parts.append("You can also see and discuss images the user attaches.")
+    # Only true for the Pro path (Claude) — the free tier's Groq model and
+    # the on-device WebLLM fallback are both text-only. Claiming image
+    # understanding to a model that doesn't have it risks confusing,
+    # hedging responses about images that were never actually sent.
+    if image_capable:
+        parts.append("You can also see and discuss images the user attaches.")
+    parts.append(
+        "Answer the user's actual question directly and specifically first — "
+        "don't open with generic background, disclaimers, or unrelated context "
+        "unless it's needed to answer. Stay on the topic they actually asked about."
+    )
     if persona.get("instructions"):
         parts.append(persona["instructions"])
     return " ".join(parts)
@@ -81,7 +91,7 @@ def stream_chat_completion(messages: list[dict[str, Any]]) -> Iterator[str]:
     """Yields text chunks for the Pro chat path. `messages` are already in
     Anthropic Messages API shape (the frontend builds them that way for
     this endpoint specifically — see js/billing.js / js/main.js)."""
-    system_prompt = build_system_prompt(load_persona())
+    system_prompt = build_system_prompt(load_persona(), image_capable=True)
     client = get_client()
     with client.messages.stream(
         model=CHAT_MODEL_ID,
