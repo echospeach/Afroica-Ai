@@ -20,10 +20,18 @@ quality, vision-capable responses — paid for by the subscription, not by you.
 **Why the free tier lost image support:** it originally ran
 Phi-3.5-vision-instruct (~3.95GB VRAM), which reliably triggered GPU
 out-of-memory / device-lost errors on modest hardware. It now runs
-Llama-3.2-3B-Instruct (~2.26GB VRAM, text-only) instead — a deliberate
-reliability-over-features tradeoff. `MODEL_ID` in `js/engine.js` is the one
-place to change if you want to try a different model; VRAM requirements for
-every available option are listed in MLC's
+Llama-3.2-3B-Instruct (~2.26GB VRAM, text-only) on desktop instead — a
+deliberate reliability-over-features tradeoff.
+
+**Desktop vs. mobile model:** `js/engine.js` picks between two model sizes
+based on a `navigator.userAgent` mobile check — phones expose far less GPU
+memory to the browser than desktop GPUs even on flagship hardware, so the
+3B model reliably fails to load there even where WebGPU itself works.
+Mobile gets Llama-3.2-1B (~880MB VRAM) instead — noticeably lower reply
+quality, but working beats not working. `DESKTOP_MODEL_ID` /
+`MOBILE_MODEL_ID` in `js/engine.js` are the two places to change if you
+want to try different models; VRAM requirements for every available option
+are listed in MLC's
 [prebuiltAppConfig](https://github.com/mlc-ai/web-llm/blob/main/src/config.ts).
 
 Both tiers share the same persona/behavior config (`persona.json`) and the
