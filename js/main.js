@@ -1,19 +1,23 @@
 // ---------------------------------------------------------------
 // AFROICA AI — ENTRY POINT
 //
-// Free tier: runs a real (text-only) language model entirely inside this
-// browser tab via WebGPU (WebLLM) — zero server cost, capped at a daily
-// message quota enforced by the backend (see js/usage.js).
+// Free tier: fast by default, routing chat through the backend to an
+// open-weight model on Groq's free, no-card-required tier (js/freeChat.js)
+// — zero cost, shared org-wide across every free user. Automatically
+// falls back to a (text-only) model running entirely on-device via
+// WebGPU/WebLLM (js/engine.js) if Groq's shared quota is ever exhausted —
+// slower, but still genuinely free no matter how much it's used, so the
+// free tier never actually breaks even under heavy load.
 //
-// Pro tier: routes chat through the Python backend (see /backend) to a
-// fast, vision-capable hosted Claude model instead of the local WebLLM
-// engine — funded by the subscription, not by the free tier's compute.
-// Image understanding is Pro-only for exactly this reason: the on-device
-// model (js/engine.js) doesn't support it.
+// Pro tier: routes chat through the backend to a fast, vision-capable
+// hosted Claude model instead — funded by the subscription. Image
+// understanding is Pro-only: neither free-tier path (Groq or WebLLM)
+// supports it.
 //
 // Behavior/persona is controlled by persona.json (see js/persona.js and
-// tools/persona_builder.py) — both the local model and the backend build
-// their system prompt from that same file.
+// tools/persona_builder.py) — the on-device model, the backend's Groq
+// path, and the backend's Claude path all build an equivalent system
+// prompt from that same file.
 // ---------------------------------------------------------------
 import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 import { createEngine } from './engine.js';
@@ -26,6 +30,7 @@ import { refreshAccount, getUser, getUsage, isPro, setUsage } from './account.js
 import { incrementUsage } from './usage.js';
 import { startCheckout, openBillingPortal } from './billing.js';
 import { buildAnthropicUserContent, streamProChat } from './proChat.js';
+import { streamFreeChat } from './freeChat.js';
 
 const chatInner = document.getElementById('chatInner');
 const chatScroll = document.getElementById('chatScroll');
@@ -73,7 +78,8 @@ const pricingError = document.getElementById('pricingError');
 const chat = createChatView(chatInner, chatScroll);
 
 let engine = null;
-let modelReady = false;
+let modelReady = false; // true once the on-device WebLLM fallback has finished loading
+let usingFallback = false; // true once Groq's fast path has failed once this session — sticky for the rest of it, rather than re-trying a possibly-still-exhausted shared quota on every message
 let generating = false;
 let pendingImage = null; // { dataUrl, name }
 // messages[0] is always the system prompt — kept as a real entry from the
@@ -82,8 +88,14 @@ let pendingImage = null; // { dataUrl, name }
 // this entry (the backend builds its own system prompt from persona.json).
 const messages = [{ role: 'system', content: '' }];
 
+// Free tier no longer needs anything pre-loaded — Groq's fast path (the
+// default) is ready the instant you're authenticated. Only blocked while
+// actively loading the on-device fallback, and only once we know we need it.
 function isInteractive(){
-  return (isPro() || modelReady) && !generating;
+  if(generating) return false;
+  if(isPro()) return true;
+  if(usingFallback) return modelReady;
+  return true;
 }
 
 function updateSendState(){
@@ -306,31 +318,29 @@ authForm.addEventListener('submit', async (e) => {
   }
 });
 
-// ---- Model loading (free tier only — Pro skips the local download) ----
+// ---- Model loading (on-device fallback only — triggered lazily, see
+// sendFreeMessage, only if Groq's free fast path is ever unavailable) ----
 async function loadSystemPrompt(){
   const persona = await loadPersona();
   messages[0].content = buildSystemPrompt(persona);
 }
 
-// Kicked off as soon as the page loads — before we know if this visitor is
-// Pro — so the ~2-3GB download runs in the background while they're on the
-// sign-in screen instead of starting only after they log in. Idempotent:
-// safe to call again once auth resolves without restarting the download.
-// If they turn out to be Pro, the guards below just stop touching the UI —
-// the download quietly finishes and caches, at worst a bit of wasted
-// bandwidth for someone who didn't need it.
+// Not called until sendFreeMessage() actually needs the fallback — Groq
+// (the default free-tier path) needs nothing pre-loaded, so eagerly
+// downloading a multi-hundred-MB model nobody may ever need would just
+// slow down opening the app for the common case. Idempotent: safe to call
+// again without restarting an in-flight or already-finished download.
 let modelInitPromise = null;
 
 function initModel(){
   if(modelInitPromise) return modelInitPromise;
   modelInitPromise = (async () => {
     if(!navigator.gpu){
-      if(!isPro()) showLoadError('This browser has no WebGPU support — try latest Chrome or Edge on desktop.');
+      showLoadError('This browser has no WebGPU support — try latest Chrome or Edge on desktop.');
       return;
     }
     try{
       engine = await createEngine(webllm, (progress) => {
-        if(isPro()) return; // Pro doesn't use the local model — don't fight its UI
         const pct = Math.round((progress.progress || 0) * 100);
         loadPercent.textContent = pct + '%';
         loadFill.style.width = pct + '%';
@@ -341,14 +351,10 @@ function initModel(){
         setStatus('loading', 'Loading model…');
       });
       modelReady = true;
-      if(!isPro()){
-        hideLoadBanner();
-        setStatus(null, 'Ready · running on your device');
-        enableChatUI(false);
-      }
+      hideLoadBanner();
     }catch(err){
       console.error(err);
-      if(!isPro()) showLoadError('Could not load the model. Check the console for details.');
+      showLoadError('Could not load the model. Check the console for details.');
     }
   })();
   return modelInitPromise;
@@ -363,7 +369,11 @@ async function onAuthenticated(){
     setStatus(null, 'Ready · Pro · fast server-side responses');
     enableChatUI(true);
   }else{
-    initModel();
+    // Groq's fast path needs no preload — ready immediately. The
+    // on-device fallback only loads lazily if that path ever fails.
+    hideLoadBanner();
+    setStatus(null, 'Ready · fast mode');
+    enableChatUI(false);
   }
 }
 
@@ -403,33 +413,25 @@ function isGpuDeviceLostError(err){
   return /device was lost|devicelostinfo|modelnotloadederror|out ?of ?memory/i.test(msg);
 }
 
-async function sendFreeMessage(displayText, imageForMessage){
-  try{
-    const usage = await incrementUsage();
-    setUsage(usage);
-    renderAccountUI();
-  }catch(err){
-    if(err.status === 402){
-      showPricingModal();
+// The on-device fallback (only reached if Groq's fast path is
+// unavailable — see sendFreeMessage). Loads the model first if it isn't
+// already ready, then generates locally exactly as before this feature.
+async function sendViaWebLLM(){
+  if(!modelReady){
+    loadBanner.classList.remove('hidden');
+    loadBanner.classList.remove('error');
+    loadLabel.textContent = 'Fast mode is busy — switching to on-device mode…';
+    loadPercent.textContent = '0%';
+    loadFill.style.width = '0%';
+    setStatus('loading', 'Loading on-device model…');
+    await initModel();
+    if(!modelReady){
+      // initModel() already showed its own error via showLoadError().
+      chat.removeTyping();
+      chat.addMessage('Could not load the on-device fallback either — please try again in a moment.', 'ai');
+      endSend('Model unavailable');
       return;
     }
-    // The usage tracker had a hiccup — this feature is free either way
-    // (local inference), so don't block it on a backend blip.
-    console.error('Usage check failed, continuing on the free local model anyway:', err);
-  }
-
-  beginSend(displayText, imageForMessage);
-
-  if(imageForMessage){
-    messages.push({
-      role: 'user',
-      content: [
-        { type: 'text', text: displayText },
-        { type: 'image_url', image_url: { url: imageForMessage.dataUrl } }
-      ]
-    });
-  }else{
-    messages.push({ role: 'user', content: displayText });
   }
 
   let started = false;
@@ -482,6 +484,75 @@ async function sendFreeMessage(displayText, imageForMessage){
   }
 }
 
+// Free tier's default path: the backend's Groq-backed fast lane (see
+// js/freeChat.js) — no client-side loading at all. Falls back to the
+// on-device model only if Groq signals its shared free quota is
+// unavailable (503) — see sendViaWebLLM above. Image attachments never
+// reach here — free tier's attach button is Pro-gated (see enableChatUI).
+async function sendFreeMessage(displayText){
+  beginSend(displayText, null);
+  messages.push({ role: 'user', content: displayText });
+
+  if(!usingFallback){
+    const payload = messages.slice(1).map((m) => ({ role: m.role, content: m.content }));
+    let started = false;
+    try{
+      const fullReply = await streamFreeChat(payload, (partial) => {
+        if(!started){
+          chat.removeTyping();
+          started = true;
+        }
+        chat.renderStreamingReply(partial);
+      });
+      if(!started){
+        chat.removeTyping();
+        chat.addMessage(fullReply || "I didn't manage to generate a reply — try rephrasing that.", 'ai');
+      }
+      messages.push({ role: 'assistant', content: fullReply });
+      endSend('Ready · fast mode');
+      return;
+    }catch(err){
+      if(err.status === 429){
+        chat.removeTyping();
+        chat.addMessage("You've hit today's free daily limit — upgrade to Pro for unlimited messages, or try again tomorrow.", 'ai');
+        endSend('Ready · fast mode');
+        showPricingModal();
+        return;
+      }
+      if(err.status !== 503){
+        console.error(err);
+        chat.removeTyping();
+        chat.addMessage('Something went wrong reaching the server. Check the console for details.', 'ai');
+        endSend('Ready · fast mode');
+        return;
+      }
+      // 503: Groq's shared free quota is temporarily exhausted — a
+      // routine, expected fallback trigger, not a real error. The
+      // backend never incremented today's usage count for a rejected
+      // attempt, so do it here instead, same as the Groq-success path
+      // does server-side — a fallback message should still count
+      // against the daily free cap.
+      console.warn('Fast mode unavailable, switching to on-device fallback for this session:', err);
+      usingFallback = true;
+      try{
+        const usage = await incrementUsage();
+        setUsage(usage);
+        renderAccountUI();
+      }catch(usageErr){
+        if(usageErr.status === 402){
+          chat.removeTyping();
+          showPricingModal();
+          endSend('Ready · fast mode');
+          return;
+        }
+        console.error('Usage check failed, continuing with on-device fallback anyway:', usageErr);
+      }
+    }
+  }
+
+  await sendViaWebLLM();
+}
+
 async function sendProMessage(displayText, imageForMessage){
   beginSend(displayText, imageForMessage);
 
@@ -531,7 +602,7 @@ async function sendMessage(){
   const displayText = text || (imageForMessage ? 'Describe this image.' : '');
 
   if(isPro()) await sendProMessage(displayText, imageForMessage);
-  else await sendFreeMessage(displayText, imageForMessage);
+  else await sendFreeMessage(displayText);
 }
 
 // ---- Wiring ----
@@ -676,7 +747,6 @@ async function boot(){
         window.alert(err.detail || err.message || 'That reset link is invalid or expired.');
       }
     }
-    initModel();
     showAuthGate();
     return;
   }
@@ -701,11 +771,10 @@ async function boot(){
     }
   }
 
-  // Not (yet) authenticated — a first-time visitor is, by definition, not
-  // yet a Pro subscriber, so start the on-device model download now,
-  // in parallel with the sign-in screen, instead of making them wait for
-  // it after logging in.
-  initModel();
+  // Not (yet) authenticated. No preloading needed here anymore — Groq's
+  // fast path (the free-tier default once signed in) needs nothing
+  // downloaded up front, and the on-device fallback only ever loads
+  // lazily if that path fails (see sendFreeMessage).
   showAuthGate();
 }
 

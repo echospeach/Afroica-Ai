@@ -1,37 +1,56 @@
 # Afroica AI
 
 A chat app with a free tier that costs nothing to run and a paid tier that's
-fast. Free users run a real language model entirely in their own browser
-(WebLLM, on-device, zero server cost). Pro subscribers get routed to a
-hosted Claude model on a small Python backend for near-instant, higher
-quality, vision-capable responses — paid for by the subscription, not by you.
+fast. Free users get fast, server-side responses by default from an
+open-weight model on Groq's genuinely free tier — funded by nobody, since
+it's free — with an automatic on-device fallback (WebLLM/WebGPU, zero
+server cost) if Groq's shared quota is ever exhausted, so the free tier
+never actually breaks no matter how much it's used. Pro subscribers get
+routed to a hosted Claude model instead, for higher quality, vision-capable
+responses — paid for by the subscription, not by you.
 
 ## How the two tiers work
 
 | | Free | Pro (Monthly $6.99 / Yearly $59.99) |
 |---|---|---|
-| Where inference runs | Your browser (WebGPU) | Backend → Anthropic Claude Haiku 4.5 |
+| Where inference runs | Backend → Groq (fast path), your browser (fallback) | Backend → Anthropic Claude Haiku 4.5 |
 | Cost to you (the operator) | $0, always | Funded by the subscription |
-| Speed | Limited by your device | Fast, server-side |
+| Speed | Fast (Groq) — or limited by your device if Groq's shared quota is exhausted | Fast, server-side |
 | Daily limit | 15 messages/day | Unlimited (soft fair-use cap) |
-| Image understanding | No (text-only on-device model) | Yes |
+| Image understanding | No | Yes |
 | Requires an account | Yes (to enforce the daily cap) | Yes |
 
-**Why the free tier lost image support:** it originally ran
-Phi-3.5-vision-instruct (~3.95GB VRAM), which reliably triggered GPU
-out-of-memory / device-lost errors on modest hardware. It now runs
-Llama-3.2-3B-Instruct (~2.26GB VRAM, text-only) on desktop instead — a
-deliberate reliability-over-features tradeoff.
+### Free tier: Groq by default, WebLLM as the safety net
 
-**Desktop vs. mobile model:** `js/engine.js` picks between two model sizes
-based on a `navigator.userAgent` mobile check — phones expose far less GPU
-memory to the browser than desktop GPUs even on flagship hardware, so the
-3B model reliably fails to load there even where WebGPU itself works.
-Mobile gets gemma3-1b-it (~711MB VRAM) instead — noticeably lower reply
-quality, but working beats not working. `DESKTOP_MODEL_ID` /
+`POST /chat/free-stream` (`backend/app/groq_llm.py`) is the default path —
+an open-weight model (currently `openai/gpt-oss-20b`) on Groq's free tier,
+which needs no credit card and so can never actually cost you anything.
+The catch: Groq's free quota is **shared across every free user of the app
+combined**, not per-user, so it can and will occasionally get exhausted
+under load. When that happens, the backend returns a `503` and
+`js/main.js`'s `sendFreeMessage()` catches it specifically, switching that
+browser session to the on-device WebLLM fallback for the rest of the
+session — slower (it has to download a model first) but still genuinely
+free at any scale, since each user's own device does the work. No
+`GROQ_API_KEY` configured at all? Same fallback, immediately, no delay —
+see `backend/.env.example`.
+
+**The on-device fallback model** originally ran Phi-3.5-vision-instruct
+(~3.95GB VRAM), which reliably triggered GPU out-of-memory / device-lost
+errors on modest hardware. It now runs Llama-3.2-3B-Instruct (~2.26GB VRAM,
+text-only) on desktop — a deliberate reliability-over-features tradeoff
+(this is also why free-tier image understanding went away entirely, Groq's
+model included).
+
+**Desktop vs. mobile fallback model:** `js/engine.js` picks between two
+model sizes based on a `navigator.userAgent` mobile check — phones expose
+far less GPU memory to the browser than desktop GPUs even on flagship
+hardware, so the 3B model reliably fails to load there even where WebGPU
+itself works. Mobile gets gemma3-1b-it (~711MB VRAM) instead — noticeably
+lower reply quality, but working beats not working. `DESKTOP_MODEL_ID` /
 `MOBILE_MODEL_ID` in `js/engine.js` are the two places to change if you
-want to try different models; VRAM requirements for every available option
-are listed in MLC's
+want to try different fallback models; VRAM requirements for every
+available option are listed in MLC's
 [prebuiltAppConfig](https://github.com/mlc-ai/web-llm/blob/main/src/config.ts).
 
 Both tiers share the same persona/behavior config (`persona.json`) and the
@@ -65,6 +84,7 @@ afroica-ai/
 │   ├── account.js                        # cached "who's signed in, are they Pro" state
 │   ├── usage.js                           # GET/POST /usage (free-tier daily cap)
 │   ├── billing.js                          # Stripe Checkout / Billing Portal redirects
+│   ├── freeChat.js                          # streams from /chat/free-stream (free-tier fast path)
 │   └── proChat.js                           # streams from the backend (Pro tier)
 ├── tools/
 │   └── persona_builder.py    # Python CLI that writes persona.json
@@ -79,13 +99,14 @@ afroica-ai/
 │   │   ├── deps.py                      # auth dependency
 │   │   ├── plans.py                      # pricing/limits — tune numbers here
 │   │   ├── llm.py                         # Anthropic client, persona.json → system prompt
+│   │   ├── groq_llm.py                     # Groq client (free-tier fast path), also builds from persona.json
 │   │   ├── rate_limit.py                   # in-memory per-IP rate limiting
 │   │   ├── email.py                         # Resend email, console fallback
 │   │   └── routers/
 │   │       ├── auth.py                      # signup/login/me/delete, forgot/reset password
 │   │       ├── usage.py                      # daily quota tracking
 │   │       ├── billing.py                     # Stripe checkout/portal/webhook
-│   │       ├── chat.py                         # Pro streaming chat endpoint
+│   │       ├── chat.py                         # /chat/stream (Pro) and /chat/free-stream (free tier, Groq)
 │   │       └── admin.py                         # admin login, stats/users, user detail, impersonate
 │   ├── tests/                              # pytest — no real Stripe/Anthropic calls needed
 │   ├── tools/
@@ -224,7 +245,7 @@ what impersonation makes possible.
 
 **Backend — Render.com (free tier) + Neon.tech (free Postgres):**
 1. Create a free Postgres database at [neon.tech](https://neon.tech); copy its connection string into `DATABASE_URL`.
-2. Push this repo to GitHub, then create a new **Web Service** on [Render](https://render.com) pointing at `backend/` — it picks up `backend/render.yaml` automatically. Set the env vars Render prompts for (`DATABASE_URL`, `ANTHROPIC_API_KEY`, `STRIPE_*`, `FRONTEND_URL`, `CORS_ORIGINS`).
+2. Push this repo to GitHub, then create a new **Web Service** on [Render](https://render.com) pointing at `backend/` — it picks up `backend/render.yaml` automatically. Set the env vars Render prompts for (`DATABASE_URL`, `ANTHROPIC_API_KEY`, `GROQ_API_KEY` (optional — powers the free tier's fast path, see below), `STRIPE_*`, `FRONTEND_URL`, `CORS_ORIGINS`).
 3. Render's free tier sleeps after inactivity (cold-start delay on the first request) — fine to start, upgrade once you have paying users.
 
 **Backend — Railway (paid; no free tier suitable for this):** Railway's
@@ -235,7 +256,7 @@ this only if you've deliberately decided that cost is acceptable.
 1. [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo** → select this repo.
 2. In the new service's **Settings → Source**, set **Root Directory** to `backend` — Railway will then pick up `backend/railway.toml` automatically (Nixpacks build, `uvicorn ... --port $PORT` start command).
 3. **+ New → Database → Add PostgreSQL** in the same project. Railway provisions it and exposes a `DATABASE_URL` variable.
-4. In the backend service's **Variables** tab, add `DATABASE_URL` as a reference to the Postgres service's `DATABASE_URL` (Railway's variable-reference picker does this for you), plus every other var from `backend/.env.example`: `JWT_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH`, `ADMIN_JWT_SECRET`, `ANTHROPIC_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_MONTHLY`, `STRIPE_PRICE_YEARLY`, `FRONTEND_URL`, `CORS_ORIGINS`, and optionally `RESEND_API_KEY`/`EMAIL_FROM`.
+4. In the backend service's **Variables** tab, add `DATABASE_URL` as a reference to the Postgres service's `DATABASE_URL` (Railway's variable-reference picker does this for you), plus every other var from `backend/.env.example`: `JWT_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH`, `ADMIN_JWT_SECRET`, `ANTHROPIC_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_MONTHLY`, `STRIPE_PRICE_YEARLY`, `FRONTEND_URL`, `CORS_ORIGINS`, and optionally `GROQ_API_KEY` / `RESEND_API_KEY`/`EMAIL_FROM`.
 5. Railway assigns a public URL under **Settings → Networking → Generate Domain**. Once you have it: register `https://<that-domain>/billing/webhook` as a real webhook endpoint in the Stripe Dashboard (**Developers → Webhooks**, live mode) and put *that* endpoint's signing secret in `STRIPE_WEBHOOK_SECRET` — this replaces the local `stripe listen` step entirely; nothing runs on your machine once deployed.
 6. Redeploy after any variable change — Railway does this automatically on save, but confirm the deploy log shows the new values took effect.
 
@@ -261,17 +282,22 @@ python tools/persona_builder.py \
 python tools/persona_builder.py --show
 ```
 
-The free tier's `js/persona.js` fetches `persona.json` fresh on every page
-load; the Pro tier's `backend/app/llm.py` reads the same file on each
+The on-device fallback's `js/persona.js` fetches `persona.json` fresh on
+every page load; the Pro tier's `backend/app/llm.py` and the free tier's
+Groq path (`backend/app/groq_llm.py`, which reuses `llm.py`'s
+`build_system_prompt`/`load_persona`) both read the same file on each
 request. No Python runs while the app itself is in use outside of the
 backend server — `persona_builder.py` is purely an editing tool.
 
 ## Requirements
 
-- Chrome or Edge (desktop), latest version — needs **WebGPU** for the free tier
+- Any modern browser works for the free tier's default (Groq) path — no
+  WebGPU needed there. **WebGPU** (Chrome/Edge, desktop or recent mobile)
+  is only needed for the on-device fallback, and only if it's ever used.
 - Python 3.10+ for the backend and for `persona_builder.py`
-- Free tier: first load downloads and caches the on-device model (~2-3 GB).
-  Every load after that is near-instant and works offline.
+- If the on-device fallback ever kicks in: first load downloads and caches
+  that model (~1-2 GB depending on desktop/mobile). Every load after that
+  is near-instant and works offline.
 - Pro tier: needs a real `ANTHROPIC_API_KEY` on the backend
   ([console.anthropic.com](https://console.anthropic.com)) — this is the one
   part of the system with real per-message cost, covered by subscriptions.
@@ -284,10 +310,11 @@ backend server — `persona_builder.py` is purely an editing tool.
 
 - **Change how the AI behaves** — `persona.json` (or `tools/persona_builder.py`).
 - **Change pricing/limits** — `backend/app/plans.py`. One file, plain numbers.
-- **Swap the free-tier model** — `MODEL_ID` / `CHAT_OPTS` in `js/engine.js`.
+- **Swap the free-tier fast-path model** — `GROQ_MODEL_ID` in `backend/app/plans.py`.
+- **Swap the free-tier fallback model** — `DESKTOP_MODEL_ID` / `MOBILE_MODEL_ID` in `js/engine.js`.
 - **Swap the Pro-tier model** — `CHAT_MODEL_ID` in `backend/app/plans.py`.
 - **Change the send/receive flow** — `sendMessage()` / `sendFreeMessage()` /
-  `sendProMessage()` in `js/main.js`.
+  `sendViaWebLLM()` / `sendProMessage()` in `js/main.js`.
 - **Change auth/billing logic** — `backend/app/routers/auth.py` and `billing.py`.
 - **Change the look** — `style.css` (CSS variables at the top control colors).
 - **Change the logo** — `assets/logo.svg`, referenced from `style.css` (sidebar, hero, chat avatar) and `index.html` (favicon).
@@ -325,6 +352,12 @@ a real key.
 - Pro subscribers still hit a soft daily cap (`PRO_DAILY_SOFT_CAP` in
   `plans.py`, currently 150/day) so a leaked token or abusive script can't
   run up an unbounded API bill.
+- The free tier's Groq path can't run up a bill at all — no credit card is
+  attached to a free Groq API key, so requests beyond the free quota are
+  simply rejected (`503`, triggering the on-device fallback), never billed.
+  Free-tier users also still hit the same 15/day cap (`FREE_DAILY_LIMIT`)
+  regardless of which path serves them, so one account can't exhaust
+  Groq's shared quota alone.
 - Conversation history sent to Anthropic is trimmed to the most recent
   `MAX_HISTORY_MESSAGES` (`plans.py`, currently 20) — without this, a single
   long-running conversation gets more expensive with every turn, since the

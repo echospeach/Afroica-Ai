@@ -26,6 +26,13 @@ MAX_HISTORY_MESSAGES = 20
 # a heavy Pro user costs well under the subscription price at this cap.
 CHAT_MODEL_ID = "claude-haiku-4-5"
 
+# Free tier's fast path (see routers/chat.py POST /chat/free-stream) — an
+# open-weight model hosted on Groq's genuinely free, no-card-required tier.
+# Shared org-wide across every free user (not per-user), so this can and
+# will occasionally hit its own rate limit under load — that's expected
+# and handled by falling back to on-device WebLLM, not an error to fix.
+GROQ_MODEL_ID = "openai/gpt-oss-20b"
+
 # Numeric prices — the single source of truth Stripe's actual Price objects
 # should match. Kept separate from the display strings below so the admin
 # dashboard's MRR estimate can't silently drift from what's charged.
@@ -39,7 +46,7 @@ PLANS = {
         "daily_limit": FREE_DAILY_LIMIT,
         "features": [
             f"{FREE_DAILY_LIMIT} messages/day",
-            "Runs on your device (private, but slower)",
+            "Fast responses, zero cost to run",
             "Voice input",
         ],
     },

@@ -33,6 +33,12 @@ class Settings(BaseSettings):
 
     anthropic_api_key: str = ""
 
+    # Free-tier fast path (see routers/chat.py POST /chat/free-stream) —
+    # genuinely free, no-card-required inference on Groq's shared org-wide
+    # quota. If unset, the free tier just falls back to on-device WebLLM
+    # immediately, same as before this existed — nothing breaks without it.
+    groq_api_key: str = ""
+
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
     stripe_price_monthly: str = ""
