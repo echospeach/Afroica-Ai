@@ -27,7 +27,7 @@ deliberate reliability-over-features tradeoff.
 based on a `navigator.userAgent` mobile check — phones expose far less GPU
 memory to the browser than desktop GPUs even on flagship hardware, so the
 3B model reliably fails to load there even where WebGPU itself works.
-Mobile gets Llama-3.2-1B (~880MB VRAM) instead — noticeably lower reply
+Mobile gets gemma3-1b-it (~711MB VRAM) instead — noticeably lower reply
 quality, but working beats not working. `DESKTOP_MODEL_ID` /
 `MOBILE_MODEL_ID` in `js/engine.js` are the two places to change if you
 want to try different models; VRAM requirements for every available option

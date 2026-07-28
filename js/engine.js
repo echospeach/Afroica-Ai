@@ -10,10 +10,11 @@
 const DESKTOP_MODEL_ID = "Llama-3.2-3B-Instruct-q4f16_1-MLC";
 // Phones expose far less GPU memory to the browser than desktop GPUs do,
 // even flagship devices — the 3B model reliably fails to load on mobile
-// even where WebGPU itself is supported. Llama-3.2-1B needs only ~880MB
-// VRAM; noticeably lower reply quality, but that's a better tradeoff than
-// the free tier simply not working on phones at all.
-const MOBILE_MODEL_ID = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
+// even where WebGPU itself is supported. gemma3-1b-it needs only ~711MB
+// VRAM (vs. ~880MB for the Llama-3.2-1B this replaced) and is from a
+// newer, well-regarded-for-its-size model family — the best available
+// tradeoff between actually loading on phone hardware and reply quality.
+const MOBILE_MODEL_ID = "gemma3-1b-it-q4f16_1-MLC";
 
 const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 
