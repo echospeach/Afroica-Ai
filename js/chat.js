@@ -1,5 +1,21 @@
 // Renders the message list: bubbles, avatars, typing indicator, and the
 // streaming reply as tokens arrive.
+import { marked } from "https://esm.run/marked";
+import DOMPurify from "https://esm.run/dompurify";
+
+// `breaks: true` so a single newline in the model's reply becomes a line
+// break (chat-style), not swallowed the way standard Markdown treats it.
+marked.setOptions({ breaks: true, gfm: true });
+
+// AI replies are rendered as Markdown → HTML, so they MUST be sanitized —
+// model output is untrusted content as far as the DOM is concerned (it
+// could echo back something from the user's own message, or occasionally
+// emit stray HTML-looking text). DOMPurify strips anything dangerous
+// (script tags, event-handler attributes, etc.) after marked converts the
+// Markdown, before it ever reaches innerHTML. Never skip this step.
+function renderMarkdown(text){
+  return DOMPurify.sanitize(marked.parse(text));
+}
 
 export function createChatView(chatInner, chatScroll){
   let streamingBubble = null;
@@ -28,7 +44,15 @@ export function createChatView(chatInner, chatScroll){
     }
     if(text){
       const textEl = document.createElement('div');
-      textEl.textContent = text;
+      textEl.className = 'msg-text';
+      if(sender === 'ai'){
+        textEl.innerHTML = renderMarkdown(text);
+      }else{
+        // User messages are shown as plain text, never interpreted as
+        // Markdown/HTML — there's no reason to render formatting out of
+        // something the user typed themselves.
+        textEl.textContent = text;
+      }
       bubble.appendChild(textEl);
     }
 
@@ -78,7 +102,12 @@ export function createChatView(chatInner, chatScroll){
       row.appendChild(streamingBubble);
       chatInner.appendChild(row);
     }
-    streamingBubble.textContent = text;
+    // Re-parsing the full text on every chunk (rather than diffing) is
+    // simple and fast enough for chat-length replies — mid-stream, an
+    // incomplete Markdown construct (an unclosed ** or code fence) can
+    // render slightly oddly for a moment, but it self-corrects as soon
+    // as the rest of the text arrives.
+    streamingBubble.innerHTML = renderMarkdown(text);
     scrollToBottom();
   }
 
