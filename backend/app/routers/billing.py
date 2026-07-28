@@ -113,9 +113,21 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
     try:
         event = stripe.Webhook.construct_event(payload, sig_header, settings.stripe_webhook_secret)
-    except (ValueError, stripe.error.SignatureVerificationError):
+    except (ValueError, stripe.error.SignatureVerificationError) as err:
+        # This used to fail silently — a mismatched STRIPE_WEBHOOK_SECRET
+        # (e.g. `stripe listen` was restarted, which mints a new secret
+        # every time, and .env wasn't updated to match) meant subscriptions
+        # would just never activate with no visible error anywhere. Now at
+        # least it's loud in the backend's own logs.
+        logger.warning(
+            "Stripe webhook rejected (bad signature or payload) — if this "
+            "keeps happening, STRIPE_WEBHOOK_SECRET in .env probably "
+            "doesn't match the currently-running `stripe listen` session: %s",
+            err,
+        )
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid webhook payload or signature")
 
+    logger.info("Stripe webhook received: %s", event["type"])
     event_type = event["type"]
     # construct_event() returns nested StripeObject instances, which support
     # __getitem__ but NOT .get() (it raises AttributeError) — convert to a

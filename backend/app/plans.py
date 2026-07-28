@@ -40,7 +40,7 @@ PLANS = {
         "features": [
             f"{FREE_DAILY_LIMIT} messages/day",
             "Runs on your device (private, but slower)",
-            "Voice input and image understanding",
+            "Voice input",
         ],
     },
     "monthly": {
@@ -51,7 +51,7 @@ PLANS = {
         "features": [
             "Unlimited daily messages (fair-use capped)",
             "Fast server-side responses",
-            "Priority image understanding",
+            "Image understanding",
         ],
     },
     "yearly": {

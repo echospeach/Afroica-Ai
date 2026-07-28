@@ -1,13 +1,15 @@
 // ---------------------------------------------------------------
 // AFROICA AI — ENTRY POINT
 //
-// Free tier: runs a real vision-capable language model entirely inside
-// this browser tab via WebGPU (WebLLM) — zero server cost, capped at a
-// daily message quota enforced by the backend (see js/usage.js).
+// Free tier: runs a real (text-only) language model entirely inside this
+// browser tab via WebGPU (WebLLM) — zero server cost, capped at a daily
+// message quota enforced by the backend (see js/usage.js).
 //
 // Pro tier: routes chat through the Python backend (see /backend) to a
-// fast hosted Claude model instead of the local WebLLM engine — funded
-// by the subscription, not by the free tier's compute.
+// fast, vision-capable hosted Claude model instead of the local WebLLM
+// engine — funded by the subscription, not by the free tier's compute.
+// Image understanding is Pro-only for exactly this reason: the on-device
+// model (js/engine.js) doesn't support it.
 //
 // Behavior/persona is controlled by persona.json (see js/persona.js and
 // tools/persona_builder.py) — both the local model and the backend build
@@ -55,6 +57,7 @@ const authError = document.getElementById('authError');
 const usageLabel = document.getElementById('usageLabel');
 const upgradeBtn = document.getElementById('upgradeBtn');
 const accountEmail = document.getElementById('accountEmail');
+const proBadge = document.getElementById('proBadge');
 const logoutBtn = document.getElementById('logoutBtn');
 const deleteAccountBtn = document.getElementById('deleteAccountBtn');
 const pricingModal = document.getElementById('pricingModal');
@@ -104,10 +107,14 @@ function autosize(){
   promptInput.style.height = Math.min(promptInput.scrollHeight, 160) + 'px';
 }
 
-function enableChatUI(){
+// allowImages: the free tier's on-device model (js/engine.js) is text-only
+// — image understanding is a Pro-only feature, since that runs server-side
+// against a vision-capable model instead.
+function enableChatUI(allowImages){
   promptInput.disabled = false;
   promptInput.placeholder = 'Message Afroica AI...';
-  attachBtn.disabled = false;
+  attachBtn.disabled = !allowImages;
+  attachBtn.title = allowImages ? '' : 'Image understanding is a Pro feature';
   if(voice.supported) micBtn.disabled = false;
   promptInput.focus();
 }
@@ -172,9 +179,11 @@ function renderAccountUI(){
 
   accountEmail.textContent = user.email;
   upgradeBtn.disabled = false;
+  proBadge.classList.toggle('hidden', !usage.is_pro);
+  upgradeBtn.classList.toggle('pro-tag', usage.is_pro);
 
   if(usage.is_pro){
-    usageLabel.textContent = 'Pro · unlimited';
+    usageLabel.textContent = user.plan ? `${user.plan} · unlimited` : 'Pro · unlimited';
     upgradeBtn.textContent = 'Manage plan';
   }else{
     usageLabel.textContent = `${usage.remaining}/${usage.limit} messages left today`;
@@ -312,7 +321,7 @@ function initModel(){
       if(!isPro()){
         hideLoadBanner();
         setStatus(null, 'Ready · running on your device');
-        enableChatUI();
+        enableChatUI(false);
       }
     }catch(err){
       console.error(err);
@@ -329,7 +338,7 @@ async function onAuthenticated(){
   if(isPro()){
     hideLoadBanner();
     setStatus(null, 'Ready · Pro · fast server-side responses');
-    enableChatUI();
+    enableChatUI(true);
   }else{
     initModel();
   }
@@ -359,6 +368,16 @@ function endSend(readyStatusText){
   generating = false;
   setStatus(null, readyStatusText);
   updateSendState();
+}
+
+// WebGPU can lose the device mid-session (most often the GPU running out
+// of VRAM) — WebLLM then throws ModelNotLoadedError on the next request
+// instead of the original device-lost error. Recognize both so the app
+// can reset its "model is ready" state instead of repeatedly retrying a
+// dead engine.
+function isGpuDeviceLostError(err){
+  const msg = String((err && err.message) || err || '');
+  return /device was lost|devicelostinfo|modelnotloadederror|out ?of ?memory/i.test(msg);
 }
 
 async function sendFreeMessage(displayText, imageForMessage){
@@ -421,9 +440,22 @@ async function sendFreeMessage(displayText, imageForMessage){
   }catch(err){
     console.error(err);
     chat.removeTyping();
-    chat.addMessage('Something went wrong generating a reply on-device. Check the console for details.', 'ai');
+    if(isGpuDeviceLostError(err)){
+      // The engine object still exists but is no longer usable — clear it
+      // out so the next attempt reloads a fresh one instead of repeatedly
+      // hitting the same dead device.
+      engine = null;
+      modelReady = false;
+      modelInitPromise = null;
+      chat.addMessage(
+        'Your GPU ran out of memory and the on-device model was unloaded. Close other GPU-heavy tabs/apps, then refresh this page to reload it.',
+        'ai'
+      );
+    }else{
+      chat.addMessage('Something went wrong generating a reply on-device. Check the console for details.', 'ai');
+    }
   }finally{
-    endSend('Ready · running on your device');
+    endSend(modelReady ? 'Ready · running on your device' : 'Model unloaded — refresh the page to reload it');
   }
 }
 
@@ -533,6 +565,10 @@ const impersonateToken = bootUrl.searchParams.get('impersonate_token');
 // same reasoning as the impersonate token above — and prompt for a new
 // password once boot() runs.
 const resetToken = bootUrl.searchParams.get('reset_token');
+// Stripe Checkout redirect: ?checkout=success or ?checkout=cancelled.
+// Read it before scrubbing the URL — boot() uses it below to confirm the
+// subscription once the account reloads.
+const checkoutStatus = bootUrl.searchParams.get('checkout');
 if(impersonateToken){
   setToken(impersonateToken);
   bootUrl.searchParams.delete('impersonate_token');
@@ -540,10 +576,30 @@ if(impersonateToken){
 }else if(resetToken){
   bootUrl.searchParams.delete('reset_token');
   window.history.replaceState({}, '', bootUrl);
-}else if(location.search.includes('checkout=')){
+}else if(checkoutStatus){
   const url = new URL(window.location.href);
   url.search = '';
   window.history.replaceState({}, '', url);
+}
+
+// Stripe's webhook can take a moment to reach the backend — poll briefly
+// for the subscription to land instead of telling someone who just paid
+// that they're still on the free plan.
+async function confirmCheckoutSuccess(){
+  for(let attempt = 0; attempt < 5 && !isPro(); attempt++){
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try{
+      await refreshAccount();
+      renderAccountUI();
+    }catch(err){
+      console.warn('Retry while confirming subscription:', err);
+    }
+  }
+  if(isPro()){
+    window.alert(`Subscription successful — you're now on ${getUser().plan || 'Pro'}!`);
+  }else{
+    window.alert("Payment received! Activation is taking a little longer than usual — refresh the page in a moment if your plan hasn't updated yet.");
+  }
 }
 
 async function boot(){
@@ -565,12 +621,37 @@ async function boot(){
   }
 
   if(isLoggedIn()){
-    try{
-      await onAuthenticated();
+    // Right after a Stripe redirect the backend can be momentarily slow
+    // (webhook processing, occasional cold start) — be more patient there
+    // than on an ordinary page load, so a subscribing user doesn't get
+    // dumped on the sign-in screen over a few seconds of lag.
+    const maxAttempts = checkoutStatus === 'success' ? 5 : 2;
+    let authenticated = false;
+    for(let attempt = 1; attempt <= maxAttempts && !authenticated; attempt++){
+      try{
+        await onAuthenticated();
+        authenticated = true;
+      }catch(err){
+        if(err.status === 401){
+          // The token itself is invalid/expired — this is a real logout,
+          // no amount of retrying fixes a bad token.
+          console.warn('Stored session was invalid, signing out:', err);
+          logout();
+          break;
+        }
+        console.warn(`Failed to load account (attempt ${attempt}/${maxAttempts}):`, err);
+        if(attempt < maxAttempts) await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
+    if(authenticated){
+      if(checkoutStatus === 'success') await confirmCheckoutSuccess();
       return;
-    }catch(err){
-      console.warn('Stored session was invalid, signing out:', err);
-      logout();
+    }
+    if(isLoggedIn()){
+      // Not a bad token (that path already returned above via logout()) —
+      // just couldn't reach the backend. Session stays intact for next
+      // reload; don't silently pretend everything's fine either.
+      console.error('Could not load your account after retrying — showing sign-in screen, but your session is still saved.');
     }
   }
 

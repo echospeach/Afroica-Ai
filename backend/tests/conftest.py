@@ -1,4 +1,8 @@
+import hashlib
+import hmac
+import json
 import os
+import time
 
 import bcrypt
 
@@ -22,6 +26,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.config import settings
 from app.database import Base, get_db
 from app.main import app
 from app.rate_limit import _attempts as _rate_limit_attempts
@@ -70,6 +75,56 @@ def auth_headers(client):
     resp = client.post("/auth/login", json={"email": "test@example.com", "password": "hunter22"})
     token = resp.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture()
+def pro_auth_headers(client, monkeypatch):
+    """A signed-up user with an active Pro (monthly) subscription, granted
+    through a simulated Stripe webhook — the same code path a real checkout
+    completion uses, not a shortcut that could mask a real bug in it."""
+    client.post("/auth/signup", json={"email": "pro@example.com", "password": "hunter22"})
+    resp = client.post("/auth/login", json={"email": "pro@example.com", "password": "hunter22"})
+    headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+    monkeypatch.setattr(
+        "app.routers.billing.stripe.Subscription.retrieve",
+        lambda sub_id: {
+            "status": "active",
+            "items": {"data": [{"price": {"id": "price_monthly_dummy"}}]},
+        },
+    )
+
+    user_id = client.get("/auth/me", headers=headers).json()["id"]
+
+    def stripe_sig(payload: bytes) -> str:
+        timestamp = int(time.time())
+        signed = f"{timestamp}.{payload.decode('utf-8')}"
+        sig = hmac.new(
+            settings.stripe_webhook_secret.encode("utf-8"), signed.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
+        return f"t={timestamp},v1={sig}"
+
+    event = {
+        "id": "evt_pro_fixture",
+        "object": "event",
+        "api_version": "2023-10-16",
+        "created": 1700000000,
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "client_reference_id": str(user_id),
+                "customer": "cus_pro_fixture",
+                "subscription": "sub_pro_fixture",
+            }
+        },
+    }
+    payload = json.dumps(event).encode("utf-8")
+    client.post(
+        "/billing/webhook",
+        content=payload,
+        headers={"stripe-signature": stripe_sig(payload), "content-type": "application/json"},
+    )
+    return headers
 
 
 @pytest.fixture()

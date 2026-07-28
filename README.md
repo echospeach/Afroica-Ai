@@ -1,10 +1,10 @@
 # Afroica AI
 
 A chat app with a free tier that costs nothing to run and a paid tier that's
-fast. Free users run a real vision-language model entirely in their own
-browser (WebLLM, on-device, zero server cost). Pro subscribers get routed to
-a hosted Claude model on a small Python backend for near-instant, higher
-quality responses — paid for by the subscription, not by you.
+fast. Free users run a real language model entirely in their own browser
+(WebLLM, on-device, zero server cost). Pro subscribers get routed to a
+hosted Claude model on a small Python backend for near-instant, higher
+quality, vision-capable responses — paid for by the subscription, not by you.
 
 ## How the two tiers work
 
@@ -14,7 +14,17 @@ quality responses — paid for by the subscription, not by you.
 | Cost to you (the operator) | $0, always | Funded by the subscription |
 | Speed | Limited by your device | Fast, server-side |
 | Daily limit | 15 messages/day | Unlimited (soft fair-use cap) |
+| Image understanding | No (text-only on-device model) | Yes |
 | Requires an account | Yes (to enforce the daily cap) | Yes |
+
+**Why the free tier lost image support:** it originally ran
+Phi-3.5-vision-instruct (~3.95GB VRAM), which reliably triggered GPU
+out-of-memory / device-lost errors on modest hardware. It now runs
+Llama-3.2-3B-Instruct (~2.26GB VRAM, text-only) instead — a deliberate
+reliability-over-features tradeoff. `MODEL_ID` in `js/engine.js` is the one
+place to change if you want to try a different model; VRAM requirements for
+every available option are listed in MLC's
+[prebuiltAppConfig](https://github.com/mlc-ai/web-llm/blob/main/src/config.ts).
 
 Both tiers share the same persona/behavior config (`persona.json`) and the
 same frontend (`index.html` / `style.css` / `js/`). Switching tiers is just a

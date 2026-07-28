@@ -35,6 +35,7 @@ class UserOut(BaseModel):
     id: int
     email: str
     is_pro: bool
+    plan: str | None = None
 
 
 class UsageOut(BaseModel):

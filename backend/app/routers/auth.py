@@ -10,7 +10,7 @@ from ..database import get_db
 from ..deps import get_current_user
 from ..email import send_email
 from ..models import DailyUsage, ImpersonationLog, PasswordResetToken, User
-from ..plans import is_pro
+from ..plans import PLANS, is_pro
 from ..rate_limit import rate_limit
 from ..schemas import (
     DeleteAccountRequest,
@@ -66,7 +66,9 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
 
 @router.get("/me", response_model=UserOut)
 def me(user: User = Depends(get_current_user)):
-    return UserOut(id=user.id, email=user.email, is_pro=is_pro(user.subscription))
+    pro = is_pro(user.subscription)
+    plan_label = PLANS[user.subscription.plan]["label"] if pro and user.subscription else None
+    return UserOut(id=user.id, email=user.email, is_pro=pro, plan=plan_label)
 
 
 @router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)

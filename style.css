@@ -148,6 +148,25 @@ body{
   font-weight:600;
   letter-spacing:0.3px;
 }
+/* Distinct gold treatment for Pro subscribers — deliberately different
+   from .free-tag's green so "you're on Pro" is unmistakable at a glance,
+   not just a text change on the same-looking pill. */
+.free-tag.pro-tag{
+  background:rgba(227,168,87,0.18);
+  color:var(--gold);
+  border-color:rgba(227,168,87,0.45);
+}
+.pro-badge{
+  background:var(--gold);
+  color:var(--bg);
+  padding:2px 7px;
+  border-radius:20px;
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:0.6px;
+  flex-shrink:0;
+}
+.pro-badge.hidden{ display:none; }
 
 /* Main chat panel */
 .main{
