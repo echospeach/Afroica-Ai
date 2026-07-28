@@ -620,6 +620,10 @@ textarea::placeholder{ color:var(--text-muted); }
   gap:12px;
   width:100%;
 }
+/* Higher specificity than the ID rule above (ID + class beats ID alone)
+   so toggling class="hidden" on these actually hides them, instead of
+   the display:flex above silently winning and showing both at once. */
+#authFormWrap.hidden, #connectionError.hidden{ display:none; }
 .auth-card h2{
   font-family:'Archivo Black', sans-serif;
   font-size:20px;
