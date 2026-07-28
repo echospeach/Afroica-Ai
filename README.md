@@ -219,7 +219,19 @@ what impersonation makes possible.
 2. Push this repo to GitHub, then create a new **Web Service** on [Render](https://render.com) pointing at `backend/` — it picks up `backend/render.yaml` automatically. Set the env vars Render prompts for (`DATABASE_URL`, `ANTHROPIC_API_KEY`, `STRIPE_*`, `FRONTEND_URL`, `CORS_ORIGINS`).
 3. Render's free tier sleeps after inactivity (cold-start delay on the first request) — fine to start, upgrade once you have paying users.
 
-**Frontend:** any static host works (GitHub Pages, Netlify, Vercel, Render static site). Just update `API_BASE_URL` in `js/api.js` to your deployed backend's URL first.
+**Backend — Railway (paid; no free tier suitable for this):** Railway's
+free allowance (a one-time $5 trial credit, then $1/month) isn't enough to
+run a backend + Postgres continuously — realistically this means Railway's
+Hobby plan, **$5/month minimum**, billed to a card you add at signup. Use
+this only if you've deliberately decided that cost is acceptable.
+1. [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo** → select this repo.
+2. In the new service's **Settings → Source**, set **Root Directory** to `backend` — Railway will then pick up `backend/railway.toml` automatically (Nixpacks build, `uvicorn ... --port $PORT` start command).
+3. **+ New → Database → Add PostgreSQL** in the same project. Railway provisions it and exposes a `DATABASE_URL` variable.
+4. In the backend service's **Variables** tab, add `DATABASE_URL` as a reference to the Postgres service's `DATABASE_URL` (Railway's variable-reference picker does this for you), plus every other var from `backend/.env.example`: `JWT_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH`, `ADMIN_JWT_SECRET`, `ANTHROPIC_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_MONTHLY`, `STRIPE_PRICE_YEARLY`, `FRONTEND_URL`, `CORS_ORIGINS`, and optionally `RESEND_API_KEY`/`EMAIL_FROM`.
+5. Railway assigns a public URL under **Settings → Networking → Generate Domain**. Once you have it: register `https://<that-domain>/billing/webhook` as a real webhook endpoint in the Stripe Dashboard (**Developers → Webhooks**, live mode) and put *that* endpoint's signing secret in `STRIPE_WEBHOOK_SECRET` — this replaces the local `stripe listen` step entirely; nothing runs on your machine once deployed.
+6. Redeploy after any variable change — Railway does this automatically on save, but confirm the deploy log shows the new values took effect.
+
+**Frontend:** any static host works (GitHub Pages, Netlify, Vercel, Render static site) — and none of them need to be Railway, even if the backend is; there's no reason to pay to serve static files. Just update `API_BASE_URL` in `js/api.js` to your deployed backend's URL first.
 
 ## Controlling AI behavior with Python
 
