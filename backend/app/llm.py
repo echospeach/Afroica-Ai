@@ -43,7 +43,9 @@ def load_persona() -> dict:
         return dict(DEFAULT_PERSONA)
 
 
-def build_system_prompt(persona: dict, image_capable: bool = False) -> str:
+def build_system_prompt(
+    persona: dict, image_capable: bool = False, web_search_capable: bool = False
+) -> str:
     parts = [f"You are {persona['ai_name']}, a helpful assistant."]
     # The model's training data has its own cutoff and knows nothing about
     # that on its own — without this, it confidently states stale facts
@@ -72,6 +74,18 @@ def build_system_prompt(persona: dict, image_capable: bool = False) -> str:
     # hedging responses about images that were never actually sent.
     if image_capable:
         parts.append("You can also see and discuss images the user attaches.")
+    # Only true for the Pro path — free tier has no search tool at all, so
+    # telling it to "verify with a search" would be an instruction it has
+    # no way to follow.
+    if web_search_capable:
+        parts.append(
+            "You have a real web search tool — use it whenever a question depends on "
+            "current, specific, or verifiable facts (recent events, prices, statistics, "
+            "current officeholders, specific people/organizations/products) rather than "
+            "answering from memory and risking a wrong guess. Don't guess or fabricate "
+            "names, numbers, dates, or other specifics you're not confident of — search "
+            "for them or say plainly that you don't know, never present a guess as a fact."
+        )
     parts.append(
         "Answer the user's actual question directly and specifically first — "
         "don't open with generic background, disclaimers, or unrelated context "
@@ -123,7 +137,9 @@ def stream_chat_completion(
     (routers/chat.py) can update the daily search-usage counter — kept as
     a callback rather than a DB write here so this module stays
     DB-agnostic, matching its existing separation of concerns."""
-    system_prompt = build_system_prompt(load_persona(), image_capable=True)
+    system_prompt = build_system_prompt(
+        load_persona(), image_capable=True, web_search_capable=web_search_enabled
+    )
     client = get_client()
 
     kwargs: dict[str, Any] = {}

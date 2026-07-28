@@ -10,6 +10,43 @@
   --text-muted:#A6957F;
   --radius:14px;
 }
+/* Alternate themes — see Settings modal / js/theme.js. Applied via
+   data-theme on <html>, persisted in localStorage. Every rule elsewhere
+   in this file reads these same custom properties, so switching themes
+   never needs touching any other selector — only new palettes go here. */
+:root[data-theme="midnight"]{
+  --bg:#0B0E16;
+  --surface:#131926;
+  --surface-2:#1A2233;
+  --line:#2A3347;
+  --gold:#5B8DEF;
+  --clay:#E2574C;
+  --green:#34A876;
+  --text:#EBEEF5;
+  --text-muted:#8D96AC;
+}
+:root[data-theme="slate"]{
+  --bg:#111213;
+  --surface:#1A1B1E;
+  --surface-2:#222327;
+  --line:#34363B;
+  --gold:#C9A24B;
+  --clay:#C1503B;
+  --green:#3A9B6E;
+  --text:#EDEDEE;
+  --text-muted:#9A9CA3;
+}
+:root[data-theme="light"]{
+  --bg:#F6F4F0;
+  --surface:#FFFFFF;
+  --surface-2:#F0ECE5;
+  --line:#DEDACF;
+  --gold:#B8792C;
+  --clay:#A5402D;
+  --green:#286B49;
+  --text:#221B12;
+  --text-muted:#71614C;
+}
 *{box-sizing:border-box; margin:0; padding:0;}
 html,body{height:100%;}
 body{
@@ -172,6 +209,12 @@ body{
   justify-content:space-between;
   padding:16px 28px;
   border-bottom:1px solid var(--line);
+  flex-shrink:0;
+}
+.topbar-right{
+  display:flex;
+  align-items:center;
+  gap:14px;
   flex-shrink:0;
 }
 .sidebar-toggle{
@@ -869,6 +912,74 @@ textarea::placeholder{ color:var(--text-muted); }
   min-height:16px;
   margin-top:14px;
 }
+
+/* ---- Settings modal ---- */
+.settings-card-wrap{
+  position:relative;
+  width:100%;
+  max-width:420px;
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:32px;
+  text-align:left;
+}
+.settings-card-wrap h2{
+  font-family:'Archivo Black', sans-serif;
+  font-size:20px;
+  font-weight:400;
+  margin-bottom:22px;
+  text-align:center;
+}
+.settings-section{ margin-bottom:20px; }
+.settings-section:last-child{ margin-bottom:0; }
+.settings-section-label{
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:1.4px;
+  color:var(--text-muted);
+  margin-bottom:12px;
+  font-weight:600;
+}
+.settings-hint{
+  font-family:'Inter', sans-serif;
+  font-size:13px;
+  color:var(--text-muted);
+  line-height:1.5;
+}
+.theme-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+}
+.theme-swatch{
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:8px;
+  background:var(--surface-2);
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:10px 12px;
+  cursor:pointer;
+  font-family:'Inter', sans-serif;
+  font-size:12.5px;
+  color:var(--text-muted);
+  transition:border-color .15s ease, color .15s ease;
+}
+.theme-swatch:hover{ border-color:var(--gold); color:var(--text); }
+.theme-swatch.active{ border-color:var(--gold); color:var(--text); box-shadow:0 0 0 1px var(--gold); }
+.theme-swatch-preview{
+  display:block;
+  width:100%;
+  height:34px;
+  border-radius:6px;
+  border:1px solid rgba(255,255,255,0.08);
+}
+.theme-preview-afroica{ background:linear-gradient(135deg, #100B08 50%, #E3A857 50%); }
+.theme-preview-midnight{ background:linear-gradient(135deg, #0B0E16 50%, #5B8DEF 50%); }
+.theme-preview-slate{ background:linear-gradient(135deg, #111213 50%, #C9A24B 50%); }
+.theme-preview-light{ background:linear-gradient(135deg, #F6F4F0 50%, #B8792C 50%); border-color:var(--line); }
 
 @media (max-width: 640px){
   .pricing-grid{ grid-template-columns:1fr; }

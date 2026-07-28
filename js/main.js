@@ -25,12 +25,13 @@ import { loadPersona, buildSystemPrompt } from './persona.js';
 import { resizeImageFile } from './image.js';
 import { createVoiceController } from './voice.js';
 import { createChatView, makeHero } from './chat.js';
-import { signup, login, logout, isLoggedIn, setToken, deleteAccount, forgotPassword, resetPassword } from './auth.js';
+import { signup, login, logout, isLoggedIn, setToken, getToken, deleteAccount, forgotPassword, resetPassword } from './auth.js';
 import { refreshAccount, getUser, getUsage, isPro, setUsage } from './account.js';
 import { incrementUsage } from './usage.js';
 import { startCheckout, openBillingPortal } from './billing.js';
 import { buildAnthropicUserContent, streamProChat } from './proChat.js';
 import { streamFreeChat } from './freeChat.js';
+import { applyTheme, getStoredTheme } from './theme.js';
 
 const chatInner = document.getElementById('chatInner');
 const chatScroll = document.getElementById('chatScroll');
@@ -74,6 +75,10 @@ const deleteAccountBtn = document.getElementById('deleteAccountBtn');
 const pricingModal = document.getElementById('pricingModal');
 const pricingCloseBtn = document.getElementById('pricingCloseBtn');
 const pricingError = document.getElementById('pricingError');
+const settingsBtn = document.getElementById('settingsBtn');
+const settingsModal = document.getElementById('settingsModal');
+const settingsCloseBtn = document.getElementById('settingsCloseBtn');
+const themeGrid = document.getElementById('themeGrid');
 
 const chat = createChatView(chatInner, chatScroll);
 
@@ -256,6 +261,30 @@ document.querySelectorAll('.upgrade-choice-btn').forEach((btn) => {
       pricingError.textContent = err.detail || err.message || 'Could not start checkout.';
       btn.disabled = false;
     }
+  });
+});
+
+// ---- Settings modal (theme picker) ----
+function markActiveThemeSwatch(){
+  const current = getStoredTheme();
+  themeGrid.querySelectorAll('.theme-swatch').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.theme === current);
+  });
+}
+function showSettingsModal(){
+  markActiveThemeSwatch();
+  settingsModal.classList.remove('hidden');
+}
+function hideSettingsModal(){
+  settingsModal.classList.add('hidden');
+}
+settingsBtn.addEventListener('click', showSettingsModal);
+settingsCloseBtn.addEventListener('click', hideSettingsModal);
+
+themeGrid.querySelectorAll('.theme-swatch').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    applyTheme(btn.dataset.theme);
+    markActiveThemeSwatch();
   });
 });
 
@@ -674,6 +703,27 @@ if(impersonateToken){
   window.history.replaceState({}, '', url);
 }
 
+// Decodes (never verifies — that's the server's job) the stored token's
+// own expiry claim and logs it, purely as a diagnostic. If a "why did it
+// log me out" report ever comes up again, this turns "guess and re-test"
+// into "check the console, see immediately whether the token had
+// genuinely expired or something else (network, CORS, server) was at fault."
+function logTokenDiagnostics(){
+  const token = getToken();
+  if(!token) return;
+  try{
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    const expiresAt = payload.exp ? new Date(payload.exp * 1000) : null;
+    const isExpired = expiresAt ? expiresAt.getTime() < Date.now() : null;
+    console.info(
+      '[auth] stored token expires:', expiresAt ? expiresAt.toISOString() : 'unknown',
+      isExpired === null ? '' : isExpired ? '(ALREADY EXPIRED)' : '(still valid)'
+    );
+  }catch(err){
+    console.warn('[auth] stored token could not be decoded for diagnostics (may be malformed):', err);
+  }
+}
+
 // Stripe's webhook can take a moment to reach the backend — poll briefly
 // for the subscription to land instead of telling someone who just paid
 // that they're still on the free plan.
@@ -735,6 +785,7 @@ connectionRetryBtn.addEventListener('click', async () => {
 });
 
 async function boot(){
+  logTokenDiagnostics();
   await loadSystemPrompt();
 
   if(resetToken){

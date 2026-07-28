@@ -1,6 +1,6 @@
-import { apiFetch, clearToken, isLoggedIn, setToken } from './api.js';
+import { apiFetch, clearToken, getToken, isLoggedIn, setToken } from './api.js';
 
-export { isLoggedIn, setToken };
+export { getToken, isLoggedIn, setToken };
 
 export async function signup(email, password){
   const res = await apiFetch('/auth/signup', { method: 'POST', body: { email, password } });
