@@ -317,7 +317,10 @@ function initModel(){
         const pct = Math.round((progress.progress || 0) * 100);
         loadPercent.textContent = pct + '%';
         loadFill.style.width = pct + '%';
-        loadLabel.textContent = progress.text || 'Loading on-device model…';
+        // WebLLM's own progress.text is a raw, wordy internal status
+        // ("Fetching param cache[8/58]: 217MB fetched...") — a clean fixed
+        // label reads far better than surfacing that verbatim.
+        loadLabel.textContent = 'Loading Afroica AI…';
         setStatus('loading', 'Loading model…');
       });
       modelReady = true;
@@ -680,5 +683,14 @@ async function boot(){
   initModel();
   showAuthGate();
 }
+
+// Mobile browsers (notably Android Chrome/Samsung Internet) restore a
+// scrollable element's previous scroll position on reload, same as they
+// do for window scroll — but chatScroll's content is freshly rendered
+// (the hero, not whatever conversation was on screen before), so a
+// restored non-zero offset lands it mid-scroll through nothing, looking
+// like broken/cut-off layout. Force it back to the top on every load.
+if('scrollRestoration' in history) history.scrollRestoration = 'manual';
+chatScroll.scrollTop = 0;
 
 boot();
