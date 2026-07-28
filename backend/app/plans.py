@@ -26,6 +26,20 @@ MAX_HISTORY_MESSAGES = 20
 # a heavy Pro user costs well under the subscription price at this cap.
 CHAT_MODEL_ID = "claude-haiku-4-5"
 
+# Pro-only real-time web search (routers/chat.py, llm.py) — Claude decides
+# on its own when a question actually needs a search, so this cap is a
+# worst-case ceiling, not a typical-case estimate. Anthropic's web search
+# tool is $10 per 1,000 searches ($0.01 each) on top of normal token cost.
+# Worst case (cap hit every day): 10/day * $0.01 = $0.10/day ≈ $3/month —
+# on top of the existing ~$9-15/month worst case for chat tokens (see
+# PRO_DAILY_SOFT_CAP above), still comfortably under a $6.99/mo
+# subscription even in the worst case. Tune against real usage data.
+PRO_DAILY_SEARCH_CAP = 10
+# Anthropic's own guidance: simple factual queries typically use 1-3
+# searches. Caps a single message from burning the whole daily budget
+# in one turn, regardless of PRO_DAILY_SEARCH_CAP.
+MAX_WEB_SEARCHES_PER_REQUEST = 3
+
 # Free tier's fast path (see routers/chat.py POST /chat/free-stream) — an
 # open-weight model hosted on Groq's genuinely free, no-card-required tier.
 # Shared org-wide across every free user (not per-user), so this can and
@@ -59,6 +73,7 @@ PLANS = {
             "Unlimited daily messages (fair-use capped)",
             "Fast server-side responses",
             "Image understanding",
+            "Real-time web search for current info",
         ],
     },
     "yearly": {

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import get_current_user
-from ..models import DailyUsage, User
+from ..models import DailyUsage, SearchUsage, User
 from ..plans import daily_limit_for, is_pro
 from ..schemas import UsageOut
 
@@ -24,6 +24,20 @@ def _get_or_create_usage(db: Session, user_id: int, date: dt.date) -> DailyUsage
     )
     if row is None:
         row = DailyUsage(user_id=user_id, date=date, count=0)
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+    return row
+
+
+def _get_or_create_search_usage(db: Session, user_id: int, date: dt.date) -> SearchUsage:
+    row = (
+        db.query(SearchUsage)
+        .filter(SearchUsage.user_id == user_id, SearchUsage.date == date)
+        .first()
+    )
+    if row is None:
+        row = SearchUsage(user_id=user_id, date=date, count=0)
         db.add(row)
         db.commit()
         db.refresh(row)

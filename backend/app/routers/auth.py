@@ -9,7 +9,7 @@ from ..config import settings
 from ..database import get_db
 from ..deps import get_current_user
 from ..email import send_email
-from ..models import DailyUsage, ImpersonationLog, PasswordResetToken, User
+from ..models import DailyUsage, ImpersonationLog, PasswordResetToken, SearchUsage, User
 from ..plans import PLANS, is_pro
 from ..rate_limit import rate_limit
 from ..schemas import (
@@ -98,11 +98,12 @@ def delete_account(
                 err,
             )
 
-    # DailyUsage and ImpersonationLog aren't ORM relationships on User (no
-    # cascade configured), so they must be cleared explicitly — SQLite
-    # doesn't enforce the FK by default, but Postgres in production would
-    # reject the delete otherwise.
+    # DailyUsage, SearchUsage, and ImpersonationLog aren't ORM relationships
+    # on User (no cascade configured), so they must be cleared explicitly —
+    # SQLite doesn't enforce the FK by default, but Postgres in production
+    # would reject the delete otherwise.
     db.query(DailyUsage).filter(DailyUsage.user_id == user.id).delete()
+    db.query(SearchUsage).filter(SearchUsage.user_id == user.id).delete()
     db.query(ImpersonationLog).filter(ImpersonationLog.user_id == user.id).delete()
     db.delete(user)
     db.commit()

@@ -9,9 +9,9 @@ from ..deps import get_current_user
 from ..groq_llm import GroqUnavailableError, start_groq_stream, stream_groq_chunks
 from ..llm import stream_chat_completion
 from ..models import User
-from ..plans import daily_limit_for, is_pro
+from ..plans import PRO_DAILY_SEARCH_CAP, daily_limit_for, is_pro
 from ..schemas import ChatRequest
-from .usage import _get_or_create_usage, _today
+from .usage import _get_or_create_search_usage, _get_or_create_usage, _today
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 logger = logging.getLogger("afroica.chat")
@@ -40,9 +40,28 @@ def chat_stream(
     row.count += 1
     db.commit()
 
+    search_row = _get_or_create_search_usage(db, user.id, _today())
+    web_search_enabled = search_row.count < PRO_DAILY_SEARCH_CAP
+
+    def _track_search_usage(searches_used: int) -> None:
+        # Called once streaming completes (see llm.stream_chat_completion)
+        # with however many searches Claude actually performed. Re-fetches
+        # rather than closing over search_row so this is correct even if
+        # the request happens to straddle a UTC day rollover mid-stream.
+        if searches_used <= 0:
+            return
+        row2 = _get_or_create_search_usage(db, user.id, _today())
+        row2.count += searches_used
+        db.commit()
+
     anthropic_messages = [{"role": m.role, "content": m.content} for m in body.messages]
     return StreamingResponse(
-        stream_chat_completion(anthropic_messages), media_type="text/plain"
+        stream_chat_completion(
+            anthropic_messages,
+            web_search_enabled=web_search_enabled,
+            on_search_usage=_track_search_usage,
+        ),
+        media_type="text/plain",
     )
 
 

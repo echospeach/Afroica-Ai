@@ -35,6 +35,25 @@ class DailyUsage(Base):
     count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
+class SearchUsage(Base):
+    """One row per (user, UTC date) — how many Claude web searches (Pro
+    only, see plans.PRO_DAILY_SEARCH_CAP and routers/chat.py) that user has
+    triggered that day. A separate table from DailyUsage rather than a new
+    column on it: this project has no migration tooling, just
+    Base.metadata.create_all() at startup, which creates missing tables
+    but never alters existing ones — a new table ships safely to an
+    already-running production database, a new column on an existing
+    table would not."""
+
+    __tablename__ = "search_usage"
+    __table_args__ = (UniqueConstraint("user_id", "date", name="uq_search_usage_user_date"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    date: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
 class Subscription(Base):
     """At most one row per user. `status` mirrors the Stripe subscription
     status string (active, trialing, past_due, canceled, ...) — only

@@ -1,10 +1,24 @@
 from app.groq_llm import GroqUnavailableError
-from app.plans import FREE_DAILY_LIMIT, PRO_DAILY_SOFT_CAP
+from app.plans import FREE_DAILY_LIMIT, PRO_DAILY_SEARCH_CAP, PRO_DAILY_SOFT_CAP
 
 
 def _fake_stream(*args, **kwargs):
     yield "Hello"
     yield " world"
+
+
+def _fake_stream_reporting_search_usage(n):
+    """Mimics llm.stream_chat_completion actually performing n web
+    searches — invokes the on_search_usage callback it was given, same as
+    the real function does once streaming completes."""
+
+    def _fake(*args, **kwargs):
+        yield "Hello"
+        on_usage = kwargs.get("on_search_usage")
+        if on_usage:
+            on_usage(n)
+
+    return _fake
 
 
 def _fake_start_groq_stream(*args, **kwargs):
@@ -117,3 +131,52 @@ def test_free_chat_stream_enforces_daily_limit_without_calling_groq(client, auth
         "/chat/free-stream", json={"messages": [{"role": "user", "content": "hi"}]}, headers=auth_headers
     )
     assert blocked.status_code == 429
+
+
+def test_chat_stream_enables_web_search_for_a_fresh_pro_user(client, pro_auth_headers, monkeypatch):
+    captured = {}
+
+    def _fake_capture(*args, **kwargs):
+        captured.update(kwargs)
+        yield "Hello"
+
+    monkeypatch.setattr("app.routers.chat.stream_chat_completion", _fake_capture)
+
+    resp = client.post(
+        "/chat/stream", json={"messages": [{"role": "user", "content": "hi"}]}, headers=pro_auth_headers
+    )
+    assert resp.status_code == 200
+    assert captured.get("web_search_enabled") is True
+
+
+def test_chat_stream_tracks_search_usage_and_disables_search_once_capped(
+    client, pro_auth_headers, monkeypatch
+):
+    # First request: the fake reports the entire daily search budget was
+    # used in one turn (a legitimate scenario — a single complex query can
+    # use multiple searches, up to MAX_WEB_SEARCHES_PER_REQUEST each).
+    monkeypatch.setattr(
+        "app.routers.chat.stream_chat_completion",
+        _fake_stream_reporting_search_usage(PRO_DAILY_SEARCH_CAP),
+    )
+    first = client.post(
+        "/chat/stream", json={"messages": [{"role": "user", "content": "hi"}]}, headers=pro_auth_headers
+    )
+    assert first.status_code == 200
+
+    # Second request, same day: the cap is now used up, so web search
+    # should be turned off for this request rather than risking further
+    # (unbudgeted) search cost.
+    captured = {}
+
+    def _fake_capture(*args, **kwargs):
+        captured.update(kwargs)
+        yield "World"
+
+    monkeypatch.setattr("app.routers.chat.stream_chat_completion", _fake_capture)
+
+    second = client.post(
+        "/chat/stream", json={"messages": [{"role": "user", "content": "hi again"}]}, headers=pro_auth_headers
+    )
+    assert second.status_code == 200
+    assert captured.get("web_search_enabled") is False

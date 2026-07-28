@@ -18,7 +18,32 @@ responses — paid for by the subscription, not by you.
 | Speed | Fast (Groq) — or limited by your device if Groq's shared quota is exhausted | Fast, server-side |
 | Daily limit | 15 messages/day | Unlimited (soft fair-use cap) |
 | Image understanding | No | Yes |
+| Real-time web search | No (training-data cutoff only) | Yes, automatic when a question needs it |
 | Requires an account | Yes (to enforce the daily cap) | Yes |
+
+### Pro: real-time web search
+
+Both free-tier paths (Groq and the on-device fallback) only know what was
+in their training data — ask "who is the current president" and they'll
+honestly say their answer might be outdated (see the date-awareness
+instruction in `build_system_prompt()`/`buildSystemPrompt()`), rather than
+confidently stating stale facts. Pro gets the real fix: Claude's native web
+search tool (`backend/app/llm.py`), which it decides to use on its own
+when a question needs current information — recent events, prices,
+current officeholders — and skips for stable knowledge or creative
+requests. No frontend changes were needed for this — search happens
+entirely server-side; the client just receives a better-informed answer
+through the same plain-text stream as always.
+
+**Cost & the cap:** $10 per 1,000 searches (~$0.01 each) on top of normal
+token cost. `PRO_DAILY_SEARCH_CAP` (`backend/app/plans.py`, currently 10)
+bounds this per user per day — worst case adds about $3/month on top of
+the existing Haiku token cost estimate, still comfortably under the
+subscription price even if every Pro user hit it daily.
+`MAX_WEB_SEARCHES_PER_REQUEST` (currently 3) additionally stops a single
+message from spending the whole daily budget at once. Once a user hits
+the daily cap, later messages that day just skip web search and answer
+normally — never a hard error.
 
 ### Free tier: Groq by default, WebLLM as the safety net
 
@@ -93,7 +118,7 @@ afroica-ai/
 │   │   ├── main.py               # app entrypoint, global error handler
 │   │   ├── config.py               # env-driven settings
 │   │   ├── database.py              # SQLAlchemy engine/session
-│   │   ├── models.py                 # User, DailyUsage, Subscription, ImpersonationLog, PasswordResetToken
+│   │   ├── models.py                 # User, DailyUsage, SearchUsage, Subscription, ImpersonationLog, PasswordResetToken
 │   │   ├── schemas.py                 # request/response models
 │   │   ├── security.py                 # password hashing, JWT, reset tokens
 │   │   ├── deps.py                      # auth dependency
@@ -313,6 +338,7 @@ backend server — `persona_builder.py` is purely an editing tool.
 - **Swap the free-tier fast-path model** — `GROQ_MODEL_ID` in `backend/app/plans.py`.
 - **Swap the free-tier fallback model** — `DESKTOP_MODEL_ID` / `MOBILE_MODEL_ID` in `js/engine.js`.
 - **Swap the Pro-tier model** — `CHAT_MODEL_ID` in `backend/app/plans.py`.
+- **Tune Pro's web search cap** — `PRO_DAILY_SEARCH_CAP` / `MAX_WEB_SEARCHES_PER_REQUEST` in `backend/app/plans.py`.
 - **Change the send/receive flow** — `sendMessage()` / `sendFreeMessage()` /
   `sendViaWebLLM()` / `sendProMessage()` in `js/main.js`.
 - **Change auth/billing logic** — `backend/app/routers/auth.py` and `billing.py`.

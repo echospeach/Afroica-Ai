@@ -7,14 +7,18 @@ message is answered by the free on-device model or by this backend.
 
 import datetime as dt
 import json
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
 import anthropic
 
 from .config import settings
-from .plans import CHAT_MODEL_ID, MAX_HISTORY_MESSAGES
+from .plans import CHAT_MODEL_ID, MAX_HISTORY_MESSAGES, MAX_WEB_SEARCHES_PER_REQUEST
+
+# Anthropic's web search tool, versioned per their API — see
+# https://platform.claude.com/docs/en/docs/agents-and-tools/tool-use/web-search-tool
+WEB_SEARCH_TOOL_TYPE = "web_search_20250305"
 
 PERSONA_PATH = Path(__file__).resolve().parent.parent.parent / "persona.json"
 
@@ -101,16 +105,50 @@ def _trim_history(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return trimmed
 
 
-def stream_chat_completion(messages: list[dict[str, Any]]) -> Iterator[str]:
+def stream_chat_completion(
+    messages: list[dict[str, Any]],
+    *,
+    web_search_enabled: bool = False,
+    on_search_usage: Callable[[int], None] | None = None,
+) -> Iterator[str]:
     """Yields text chunks for the Pro chat path. `messages` are already in
     Anthropic Messages API shape (the frontend builds them that way for
-    this endpoint specifically — see js/billing.js / js/main.js)."""
+    this endpoint specifically — see js/billing.js / js/main.js).
+
+    `web_search_enabled` turns on Claude's native web search tool (real
+    per-search cost — see plans.PRO_DAILY_SEARCH_CAP) — Claude decides on
+    its own whether a given question actually needs a search. Once
+    streaming completes, `on_search_usage(count)` is called with however
+    many searches were actually performed (0 if none), so the caller
+    (routers/chat.py) can update the daily search-usage counter — kept as
+    a callback rather than a DB write here so this module stays
+    DB-agnostic, matching its existing separation of concerns."""
     system_prompt = build_system_prompt(load_persona(), image_capable=True)
     client = get_client()
+
+    kwargs: dict[str, Any] = {}
+    if web_search_enabled:
+        kwargs["tools"] = [
+            {
+                "type": WEB_SEARCH_TOOL_TYPE,
+                "name": "web_search",
+                "max_uses": MAX_WEB_SEARCHES_PER_REQUEST,
+            }
+        ]
+
     with client.messages.stream(
         model=CHAT_MODEL_ID,
         max_tokens=2048,
         system=system_prompt,
         messages=_trim_history(messages),
+        **kwargs,
     ) as stream:
         yield from stream.text_stream
+        final_message = stream.get_final_message()
+
+    if on_search_usage is not None:
+        searches_used = 0
+        server_tool_use = getattr(final_message.usage, "server_tool_use", None)
+        if server_tool_use is not None:
+            searches_used = getattr(server_tool_use, "web_search_requests", 0) or 0
+        on_search_usage(searches_used)
