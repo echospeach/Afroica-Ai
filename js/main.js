@@ -546,23 +546,6 @@ promptInput.addEventListener('keydown', (e) => {
   }
 });
 
-document.querySelectorAll('.suggestion[data-q]').forEach(el => {
-  el.addEventListener('click', () => {
-    if(!isInteractive()) return;
-    promptInput.value = el.dataset.q;
-    autosize();
-    sendMessage();
-  });
-});
-
-const tryPhotoSuggestion = document.getElementById('tryPhotoSuggestion');
-if(tryPhotoSuggestion){
-  tryPhotoSuggestion.addEventListener('click', () => {
-    if(!isInteractive()) return;
-    imageInput.click();
-  });
-}
-
 sendBtn.addEventListener('click', sendMessage);
 
 // ---- Mobile sidebar drawer (hidden off-canvas below 720px — see style.css) ----
