@@ -110,7 +110,9 @@ afroica-ai/
 │   ├── usage.js                           # GET/POST /usage (free-tier daily cap)
 │   ├── billing.js                          # Stripe Checkout / Billing Portal redirects
 │   ├── freeChat.js                          # streams from /chat/free-stream (free-tier fast path)
-│   └── proChat.js                           # streams from the backend (Pro tier)
+│   ├── proChat.js                            # streams from the backend (Pro tier)
+│   ├── history.js                             # conversation save/load/delete (localStorage only)
+│   └── theme.js                                # background theme selection (localStorage only)
 ├── tools/
 │   └── persona_builder.py    # Python CLI that writes persona.json
 ├── backend/                   # Python (FastAPI) — accounts, quotas, Stripe, Pro chat
@@ -345,6 +347,37 @@ backend server — `persona_builder.py` is purely an editing tool.
 - **Change the look** — `style.css` (CSS variables at the top control colors).
 - **Change the logo** — `assets/logo.svg`, referenced from `style.css` (sidebar, hero, chat avatar) and `index.html` (favicon).
 - **Change what the admin dashboard shows** — `backend/app/routers/admin.py` (data) and `admin/js/adminMain.js` (rendering).
+
+## Chat UI features
+
+- **Conversation history** — real save/load/switch/delete, replacing what
+  used to be a static placeholder list. Entirely client-side
+  (`js/history.js`, localStorage) — the backend never sees or stores this,
+  regardless of which tier answered, keeping `PRIVACY.md`'s "no message
+  content is stored" claim accurate. Not synced across devices as a result
+  — that would require server-side storage, a deliberate choice not made
+  here. Images aren't persisted (Pro-only, and base64 image data would
+  blow through localStorage's ~5-10MB quota fast).
+- **Markdown rendering** — AI replies render real formatting (bold, lists,
+  code blocks, tables) via `marked` + `DOMPurify` (`js/chat.js`, loaded the
+  same way WebLLM is — esm.run, no build step). AI output is sanitized
+  before touching `innerHTML`; never skip that step if this file is
+  touched again. User-typed messages are always shown as plain text.
+- **Copy / regenerate** — every AI reply gets a copy button; only the most
+  recent one also gets regenerate (`chat.js`'s `markLatestAi()` keeps this
+  unambiguous). Regenerating pops the last reply from the DOM, the
+  API-format `messages` array, and saved history, then re-asks the same
+  tier with the same last user message.
+- **Stop generating** — the send button becomes a stop button mid-reply.
+  The two backend-routed paths (Groq, Claude) abort via a real
+  `AbortController`; the on-device WebLLM path uses its own
+  `engine.interruptGenerate()`. Whatever text had streamed in before
+  stopping is kept as a normal (if incomplete) reply, not discarded.
+- **Background themes** — Settings (gear icon) offers 4 themes (Afroica
+  default, Midnight, Slate, Light), applied via `data-theme` on `<html>`
+  and persisted in localStorage (`js/theme.js`). A small inline script in
+  `index.html`'s `<head>` applies the saved theme before first paint to
+  avoid a flash of the default.
 
 ## Account self-service
 
